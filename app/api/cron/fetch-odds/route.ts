@@ -15,6 +15,15 @@ export async function POST(req: Request) {
 
   const events = await fetchNBAEvents(process.env.ODDS_API_KEY!);
 
+  // Store ALL events (do not filter by time here)
+  await supabase.from("nba_events").upsert(
+    events.map((e: any) => ({
+      event_id: e.id,
+      game: `${e.away_team}@${e.home_team}`,
+      commence_time: e.commence_time
+    }))
+  );
+
   let totalRows = 0;
 
   for (const event of events) {
@@ -24,7 +33,6 @@ export async function POST(req: Request) {
     const normalized = normalizeAltPlayerProps(res.json);
     if (!normalized.length) continue;
 
-    // Pair Over / Under
     const paired = new Map<string, any>();
 
     for (const row of normalized) {
@@ -37,7 +45,13 @@ export async function POST(req: Request) {
       ].join("|");
 
       const existing = paired.get(key) ?? {
-        ...row,
+        event_id: row.event_id,
+        game: row.game,
+        commence_time: row.commence_time,
+        bookmaker: row.bookmaker,
+        market: row.market,
+        player: row.player,
+        line: row.line,
         over: null,
         under: null
       };
@@ -58,5 +72,9 @@ export async function POST(req: Request) {
     }
   }
 
-  return Response.json({ ok: true, rows: totalRows });
+  return Response.json({
+    ok: true,
+    events: events.length,
+    rows: totalRows
+  });
 }
