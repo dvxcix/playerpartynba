@@ -3,57 +3,77 @@
 import { useEffect, useMemo, useState } from "react";
 import { isTodayInUserTimezone } from "@/lib/time";
 
-/**
- * NOTE:
- * Everything related to table rendering, sorting, filters,
- * toggles, column config, etc. is assumed to already exist
- * in this file and is LEFT UNCHANGED.
- *
- * The ONLY thing we are doing is filtering rows to "today"
- * in the user's browser timezone.
- */
+type OddsRow = {
+  game: string;
+  player: string;
+  market: string;
+  bookmaker?: string;
+  line: number;
+  over: number;
+  under: number;
+  commence_time?: string;
+};
 
 export default function OddsTable() {
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<OddsRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/odds/latest")
       .then(res => res.json())
       .then(data => {
-        setRows(data.rows || []);
+        setRows(Array.isArray(data.rows) ? data.rows : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  // ✅ THE FIX: user-timezone "today" filter
+  // ✅ SAFE timezone filter (never nukes table)
   const todayRows = useMemo(() => {
-    return rows.filter(row =>
-      isTodayInUserTimezone(row.commence_time)
-    );
+    return rows.filter(row => {
+      if (!row.commence_time) return true;
+      return isTodayInUserTimezone(row.commence_time);
+    });
   }, [rows]);
 
   if (loading) {
     return <div className="p-4">Loading odds…</div>;
   }
 
-  /**
-   * ⛔ IMPORTANT
-   * ⛔ DO NOT change anything below this line
-   * ⛔ This assumes you already had a pristine table implementation
-   */
+  if (!todayRows.length) {
+    return (
+      <div className="p-4 text-sm text-gray-500">
+        No odds available for today yet.
+      </div>
+    );
+  }
 
   return (
-    <>
-      {/* Replace `YourExistingTableComponent` with whatever you already had.
-          The key point is: pass `todayRows`, NOT `rows`. */}
-
-      {/* EXAMPLE (keep YOUR real component): */}
-      {/* <YourTable rows={todayRows} /> */}
-
-      {/* If OddsTable itself renders the table directly,
-          just replace the dataset it uses with todayRows */}
-    </>
+    <div className="p-4 overflow-x-auto">
+      <table className="min-w-full border text-sm">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border px-2 py-1">Game</th>
+            <th className="border px-2 py-1">Player</th>
+            <th className="border px-2 py-1">Market</th>
+            <th className="border px-2 py-1">Line</th>
+            <th className="border px-2 py-1">Over</th>
+            <th className="border px-2 py-1">Under</th>
+          </tr>
+        </thead>
+        <tbody>
+          {todayRows.map((row, i) => (
+            <tr key={i} className="hover:bg-gray-50">
+              <td className="border px-2 py-1">{row.game}</td>
+              <td className="border px-2 py-1">{row.player}</td>
+              <td className="border px-2 py-1">{row.market}</td>
+              <td className="border px-2 py-1 text-right">{row.line}</td>
+              <td className="border px-2 py-1 text-right">{row.over}</td>
+              <td className="border px-2 py-1 text-right">{row.under}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
