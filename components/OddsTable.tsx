@@ -2,7 +2,6 @@
 
 import React from 'react';
 import useSWR from 'swr';
-import { isWithinUserLocalToday } from '@/lib/time';
 import {
   ColumnDef,
   flexRender,
@@ -57,26 +56,23 @@ function fmtAmerican(n: number | null) {
 function toLocal(iso: string | null) {
   if (!iso) return '—';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
 }
 
 function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr)).filter(
-    (x) => x !== null && x !== undefined
-  ) as T[];
+  return Array.from(new Set(arr)).filter(Boolean) as T[];
 }
 
 /* =========================
-   COLOR LOGIC (FIXED)
+   COLOR LOGIC
    ========================= */
 function overClass(n: number | null) {
-  if (n === null || n === undefined) return '';
+  if (n == null) return '';
   return n > 300 ? 'text-green-600 font-semibold' : '';
 }
 
 function underClass(n: number | null) {
-  if (n === null || n === undefined) return '';
+  if (n == null) return '';
   return n < -210 ? 'text-red-600 font-semibold' : '';
 }
 /* ========================= */
@@ -94,25 +90,10 @@ function CheckboxList({
   setSelected: (next: Set<string>) => void;
   maxHeight?: number;
 }) {
-  const allChecked = options.length > 0 && selected.size === options.length;
   return (
     <div className="panel">
       <div className="panelHeader">
         <div className="panelTitle">{title}</div>
-        <label
-          className="small"
-          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-        >
-          <input
-            type="checkbox"
-            checked={allChecked}
-            onChange={(e) => {
-              if (e.target.checked) setSelected(new Set(options));
-              else setSelected(new Set());
-            }}
-          />
-          All
-        </label>
       </div>
       <div className="panelBody" style={{ maxHeight, overflow: 'auto' }}>
         {options.length === 0 ? (
@@ -142,82 +123,69 @@ function CheckboxList({
 export default function OddsTable() {
   const { data, error, isLoading, mutate } = useSWR<{ rows: OddsRow[] }>(
     '/api/odds/latest',
-    fetcher,
-    { refreshInterval: 60_000 }
+    fetcher
   );
 
   const rows = data?.rows ?? [];
 
-  const todayRows = rows;
-
   const games = React.useMemo(
-    () => uniq(todayRows.map((r) => r.game ?? 'Unknown')).sort(),
-    [todayRows]
+    () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
+    [rows]
   );
-
   const markets = React.useMemo(
     () =>
       uniq(
-        todayRows.map(
+        rows.map(
           (r) =>
             r.market_name ??
             MARKET_LABELS[r.market_key] ??
             r.market_key
         )
       ).sort(),
-    [todayRows]
+    [rows]
   );
-
   const bookmakers = React.useMemo(
     () =>
       uniq(
-        todayRows.map(
+        rows.map(
           (r) => r.bookmaker_title ?? r.bookmaker_key ?? 'Unknown'
         )
       ).sort(),
-    [todayRows]
+    [rows]
   );
 
+  // ✅ START WITH NOTHING SELECTED
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
   const [playerQuery, setPlayerQuery] = React.useState('');
 
-  React.useEffect(() => {
-    setGameSel((prev) => new Set([...prev, ...games]));
-  }, [games]);
-
-  React.useEffect(() => {
-    setMarketSel((prev) => new Set([...prev, ...markets]));
-  }, [markets]);
-
-  React.useEffect(() => {
-    setBookSel((prev) => new Set([...prev, ...bookmakers]));
-  }, [bookmakers]);
-
+  // ✅ FILTER: empty selector = show NOTHING
   const filteredRows = React.useMemo(() => {
+    if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
+
     const q = playerQuery.trim().toLowerCase();
-    return todayRows.filter((r) => {
-      const g = r.game ?? 'Unknown';
-      const m =
+
+    return rows.filter((r) => {
+      if (!gameSel.has(r.game ?? 'Unknown')) return false;
+
+      const market =
         r.market_name ??
         MARKET_LABELS[r.market_key] ??
         r.market_key;
-      const b =
-        r.bookmaker_title ?? r.bookmaker_key ?? 'Unknown';
+      if (!marketSel.has(market)) return false;
 
-      if (gameSel.size && !gameSel.has(g)) return false;
-      if (marketSel.size && !marketSel.has(m)) return false;
-      if (bookSel.size && !bookSel.has(b)) return false;
+      const book =
+        r.bookmaker_title ?? r.bookmaker_key ?? 'Unknown';
+      if (!bookSel.has(book)) return false;
+
       if (q && !r.player.toLowerCase().includes(q)) return false;
+
       return true;
     });
-  }, [todayRows, gameSel, marketSel, bookSel, playerQuery]);
+  }, [rows, gameSel, marketSel, bookSel, playerQuery]);
 
   const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'game', desc: false },
-    { id: 'player', desc: false },
-    { id: 'market', desc: false },
     { id: 'line', desc: true },
   ]);
 
@@ -233,7 +201,7 @@ export default function OddsTable() {
     });
 
   const columns = React.useMemo<ColumnDef<OddsRow>[]>(() => [
-    { accessorKey: 'game', header: 'GAME', cell: (i) => <span className="badge">{String(i.getValue() ?? '—')}</span> },
+    { accessorKey: 'game', header: 'GAME' },
     { accessorKey: 'player', header: 'PLAYER' },
     {
       id: 'market',
@@ -242,9 +210,8 @@ export default function OddsTable() {
         r.market_name ??
         MARKET_LABELS[r.market_key] ??
         r.market_key,
-      cell: (i) => <span className="badge">{String(i.getValue())}</span>,
     },
-    { accessorKey: 'line', header: 'LINE', cell: (i) => <span className="mono">{Number(i.getValue()).toString()}</span> },
+    { accessorKey: 'line', header: 'LINE' },
     {
       accessorKey: 'over_price',
       header: 'OVER',
@@ -269,11 +236,7 @@ export default function OddsTable() {
         );
       },
     },
-    { accessorKey: 'bookmaker_title', header: 'BOOK', cell: (i) => <span className="small">{String(i.getValue() ?? '—')}</span> },
-    { accessorKey: 'commence_time', header: 'START', cell: (i) => <span className="small">{toLocal(i.getValue() as string | null)}</span> },
-    { accessorKey: 'last_update', header: 'BOOK UPDATE', cell: (i) => <span className="small">{toLocal(i.getValue() as string | null)}</span> },
-    { accessorKey: 'fetched_at', header: 'FETCHED', cell: (i) => <span className="small">{toLocal(i.getValue() as string)}</span> },
-    { accessorKey: 'event_id', header: 'EVENT ID', cell: (i) => <span className="mono">{String(i.getValue())}</span> },
+    { accessorKey: 'bookmaker_title', header: 'BOOK' },
   ], []);
 
   const table = useReactTable({
@@ -286,74 +249,26 @@ export default function OddsTable() {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    enableMultiSort: true,
   });
 
-  const lastFetched = React.useMemo(() => {
-    let max = 0;
-    for (const r of todayRows) {
-      const t = new Date(r.fetched_at).getTime();
-      if (!Number.isNaN(t)) max = Math.max(max, t);
-    }
-    return max ? new Date(max).toLocaleString() : '—';
-  }, [todayRows]);
-
   if (error) {
-    return (
-      <div className="panel">
-        <div className="panelHeader">
-          <div className="panelTitle">Error</div>
-        </div>
-        <div className="panelBody">
-          Failed to load odds. Try refreshing.
-        </div>
-      </div>
-    );
+    return <div>Error loading odds.</div>;
   }
 
   return (
     <div>
       <div className="controls">
-        <div className="controlGroup">
-          <input
-            className="input"
-            placeholder="Search player…"
-            value={playerQuery}
-            onChange={(e) => setPlayerQuery(e.target.value)}
-          />
-          <button
-            className="button"
-            onClick={() => mutate()}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-
-        <div className="controlGroup">
-          <div className="badge">
-            Rows: {filteredRows.length.toLocaleString()}
-          </div>
-          <div className="badge">Last fetched: {lastFetched}</div>
-          <details>
-            <summary className="pill">Columns</summary>
-            <div className="dropdown">
-              {table.getAllLeafColumns().map((col) => (
-                <label key={col.id} className="checkRow">
-                  <input
-                    type="checkbox"
-                    checked={col.getIsVisible()}
-                    onChange={col.getToggleVisibilityHandler()}
-                  />
-                  <span>
-                    {typeof col.columnDef.header === 'string'
-                      ? col.columnDef.header
-                      : col.id.toUpperCase()}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </details>
+        <input
+          className="input"
+          placeholder="Search player…"
+          value={playerQuery}
+          onChange={(e) => setPlayerQuery(e.target.value)}
+        />
+        <button className="button" onClick={() => mutate()} disabled={isLoading}>
+          Refresh
+        </button>
+        <div className="badge">
+          Rows: {filteredRows.length.toLocaleString()}
         </div>
       </div>
 
@@ -368,30 +283,11 @@ export default function OddsTable() {
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
-                {hg.headers.map((h) => {
-                  const sort = h.column.getIsSorted();
-                  return (
-                    <th
-                      key={h.id}
-                      onClick={h.column.getToggleSortingHandler()}
-                      className="sortable"
-                    >
-                      <div className="thInner">
-                        {flexRender(
-                          h.column.columnDef.header,
-                          h.getContext()
-                        )}
-                        {sort ? (
-                          <span className="sort">
-                            {sort === 'asc' ? '▲' : '▼'}
-                          </span>
-                        ) : (
-                          <span className="sort sortHint">↕</span>
-                        )}
-                      </div>
-                    </th>
-                  );
-                })}
+                {hg.headers.map((h) => (
+                  <th key={h.id} onClick={h.column.getToggleSortingHandler()}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </th>
+                ))}
               </tr>
             ))}
           </thead>
@@ -400,10 +296,7 @@ export default function OddsTable() {
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id}>
-                    {flexRender(
-                      cell.column.columnDef.cell,
-                      cell.getContext()
-                    )}
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
               </tr>
@@ -413,8 +306,7 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Click any column header to sort. Shift-click to multi-sort.
-        Use the “Columns” menu to hide/show columns.
+        Tip: Select games, markets, and books to load data.
       </div>
     </div>
   );
