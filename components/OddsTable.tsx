@@ -62,8 +62,24 @@ function toLocal(iso: string | null) {
 }
 
 function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr)).filter((x) => x !== null && x !== undefined) as T[];
+  return Array.from(new Set(arr)).filter(
+    (x) => x !== null && x !== undefined
+  ) as T[];
 }
+
+/* =========================
+   COLOR LOGIC (NEW)
+   ========================= */
+function overClass(n: number | null) {
+  if (n === null || n === undefined) return '';
+  return n > 255 ? 'text-green-600 font-semibold' : '';
+}
+
+function underClass(n: number | null) {
+  if (n === null || n === undefined) return '';
+  return n < -210 ? 'text-red-600 font-semibold' : '';
+}
+/* ========================= */
 
 function CheckboxList({
   title,
@@ -83,7 +99,10 @@ function CheckboxList({
     <div className="panel">
       <div className="panelHeader">
         <div className="panelTitle">{title}</div>
-        <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label
+          className="small"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
           <input
             type="checkbox"
             checked={allChecked}
@@ -129,7 +148,7 @@ export default function OddsTable() {
 
   const rows = data?.rows ?? [];
 
-  // ✅ TIMEZONE-SAFE "TODAY" FILTER (NON-DESTRUCTIVE)
+  // ✅ TIMEZONE-SAFE "TODAY" FILTER
   const todayRows = React.useMemo(() => {
     return rows.filter((r) => {
       if (!r.commence_time) return true;
@@ -145,7 +164,10 @@ export default function OddsTable() {
     () =>
       uniq(
         todayRows.map(
-          (r) => r.market_name ?? MARKET_LABELS[r.market_key] ?? r.market_key
+          (r) =>
+            r.market_name ??
+            MARKET_LABELS[r.market_key] ??
+            r.market_key
         )
       ).sort(),
     [todayRows]
@@ -169,18 +191,24 @@ export default function OddsTable() {
     if (games.length && gameSel.size === 0) setGameSel(new Set(games));
   }, [games, gameSel.size]);
   React.useEffect(() => {
-    if (markets.length && marketSel.size === 0) setMarketSel(new Set(markets));
+    if (markets.length && marketSel.size === 0)
+      setMarketSel(new Set(markets));
   }, [markets, marketSel.size]);
   React.useEffect(() => {
-    if (bookmakers.length && bookSel.size === 0) setBookSel(new Set(bookmakers));
+    if (bookmakers.length && bookSel.size === 0)
+      setBookSel(new Set(bookmakers));
   }, [bookmakers, bookSel.size]);
 
   const filteredRows = React.useMemo(() => {
     const q = playerQuery.trim().toLowerCase();
     return todayRows.filter((r) => {
       const g = r.game ?? 'Unknown';
-      const m = r.market_name ?? MARKET_LABELS[r.market_key] ?? r.market_key;
-      const b = r.bookmaker_title ?? r.bookmaker_key ?? 'Unknown';
+      const m =
+        r.market_name ??
+        MARKET_LABELS[r.market_key] ??
+        r.market_key;
+      const b =
+        r.bookmaker_title ?? r.bookmaker_key ?? 'Unknown';
 
       if (gameSel.size && !gameSel.has(g)) return false;
       if (marketSel.size && !marketSel.has(m)) return false;
@@ -208,22 +236,101 @@ export default function OddsTable() {
 
   const columns = React.useMemo<ColumnDef<OddsRow>[]>(
     () => [
-      { accessorKey: 'game', header: 'GAME', cell: (i) => <span className="badge">{String(i.getValue() ?? '—')}</span> },
+      {
+        accessorKey: 'game',
+        header: 'GAME',
+        cell: (i) => (
+          <span className="badge">{String(i.getValue() ?? '—')}</span>
+        ),
+      },
       { accessorKey: 'player', header: 'PLAYER' },
       {
         id: 'market',
         header: 'MARKET',
-        accessorFn: (r) => r.market_name ?? MARKET_LABELS[r.market_key] ?? r.market_key,
-        cell: (i) => <span className="badge">{String(i.getValue())}</span>,
+        accessorFn: (r) =>
+          r.market_name ??
+          MARKET_LABELS[r.market_key] ??
+          r.market_key,
+        cell: (i) => (
+          <span className="badge">{String(i.getValue())}</span>
+        ),
       },
-      { accessorKey: 'line', header: 'LINE', cell: (i) => <span className="mono">{Number(i.getValue()).toString()}</span> },
-      { accessorKey: 'over_price', header: 'OVER', cell: (i) => <span className="mono">{fmtAmerican(i.getValue() as number | null)}</span> },
-      { accessorKey: 'under_price', header: 'UNDER', cell: (i) => <span className="mono">{fmtAmerican(i.getValue() as number | null)}</span> },
-      { accessorKey: 'bookmaker_title', header: 'BOOK', cell: (i) => <span className="small">{String(i.getValue() ?? '—')}</span> },
-      { accessorKey: 'commence_time', header: 'START', cell: (i) => <span className="small">{toLocal(i.getValue() as string | null)}</span> },
-      { accessorKey: 'last_update', header: 'BOOK UPDATE', cell: (i) => <span className="small">{toLocal(i.getValue() as string | null)}</span> },
-      { accessorKey: 'fetched_at', header: 'FETCHED', cell: (i) => <span className="small">{toLocal(i.getValue() as string)}</span> },
-      { accessorKey: 'event_id', header: 'EVENT ID', cell: (i) => <span className="mono">{String(i.getValue())}</span> },
+      {
+        accessorKey: 'line',
+        header: 'LINE',
+        cell: (i) => (
+          <span className="mono">
+            {Number(i.getValue()).toString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'over_price',
+        header: 'OVER',
+        cell: (i) => {
+          const v = i.getValue() as number | null;
+          return (
+            <span className={`mono ${overClass(v)}`}>
+              {fmtAmerican(v)}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'under_price',
+        header: 'UNDER',
+        cell: (i) => {
+          const v = i.getValue() as number | null;
+          return (
+            <span className={`mono ${underClass(v)}`}>
+              {fmtAmerican(v)}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'bookmaker_title',
+        header: 'BOOK',
+        cell: (i) => (
+          <span className="small">
+            {String(i.getValue() ?? '—')}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'commence_time',
+        header: 'START',
+        cell: (i) => (
+          <span className="small">
+            {toLocal(i.getValue() as string | null)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'last_update',
+        header: 'BOOK UPDATE',
+        cell: (i) => (
+          <span className="small">
+            {toLocal(i.getValue() as string | null)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'fetched_at',
+        header: 'FETCHED',
+        cell: (i) => (
+          <span className="small">
+            {toLocal(i.getValue() as string)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'event_id',
+        header: 'EVENT ID',
+        cell: (i) => (
+          <span className="mono">{String(i.getValue())}</span>
+        ),
+      },
     ],
     []
   );
@@ -253,8 +360,12 @@ export default function OddsTable() {
   if (error) {
     return (
       <div className="panel">
-        <div className="panelHeader"><div className="panelTitle">Error</div></div>
-        <div className="panelBody">Failed to load odds. Try refreshing.</div>
+        <div className="panelHeader">
+          <div className="panelTitle">Error</div>
+        </div>
+        <div className="panelBody">
+          Failed to load odds. Try refreshing.
+        </div>
       </div>
     );
   }
@@ -269,13 +380,19 @@ export default function OddsTable() {
             value={playerQuery}
             onChange={(e) => setPlayerQuery(e.target.value)}
           />
-          <button className="button" onClick={() => mutate()} disabled={isLoading}>
+          <button
+            className="button"
+            onClick={() => mutate()}
+            disabled={isLoading}
+          >
             {isLoading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
 
         <div className="controlGroup">
-          <div className="badge">Rows: {filteredRows.length.toLocaleString()}</div>
+          <div className="badge">
+            Rows: {filteredRows.length.toLocaleString()}
+          </div>
           <div className="badge">Last fetched: {lastFetched}</div>
           <details>
             <summary className="pill">Columns</summary>
@@ -287,7 +404,11 @@ export default function OddsTable() {
                     checked={col.getIsVisible()}
                     onChange={col.getToggleVisibilityHandler()}
                   />
-                  <span>{typeof col.columnDef.header === 'string' ? col.columnDef.header : col.id.toUpperCase()}</span>
+                  <span>
+                    {typeof col.columnDef.header === 'string'
+                      ? col.columnDef.header
+                      : col.id.toUpperCase()}
+                  </span>
                 </label>
               ))}
             </div>
@@ -296,9 +417,24 @@ export default function OddsTable() {
       </div>
 
       <div className="grid2">
-        <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} />
-        <CheckboxList title="Markets" options={markets} selected={marketSel} setSelected={setMarketSel} />
-        <CheckboxList title="Books" options={bookmakers} selected={bookSel} setSelected={setBookSel} />
+        <CheckboxList
+          title="Games"
+          options={games}
+          selected={gameSel}
+          setSelected={setGameSel}
+        />
+        <CheckboxList
+          title="Markets"
+          options={markets}
+          selected={marketSel}
+          setSelected={setMarketSel}
+        />
+        <CheckboxList
+          title="Books"
+          options={bookmakers}
+          selected={bookSel}
+          setSelected={setBookSel}
+        />
       </div>
 
       <div className="tableWrap">
@@ -309,10 +445,23 @@ export default function OddsTable() {
                 {hg.headers.map((h) => {
                   const sort = h.column.getIsSorted();
                   return (
-                    <th key={h.id} onClick={h.column.getToggleSortingHandler()} className="sortable">
+                    <th
+                      key={h.id}
+                      onClick={h.column.getToggleSortingHandler()}
+                      className="sortable"
+                    >
                       <div className="thInner">
-                        {flexRender(h.column.columnDef.header, h.getContext())}
-                        {sort ? <span className="sort">{sort === 'asc' ? '▲' : '▼'}</span> : <span className="sort sortHint">↕</span>}
+                        {flexRender(
+                          h.column.columnDef.header,
+                          h.getContext()
+                        )}
+                        {sort ? (
+                          <span className="sort">
+                            {sort === 'asc' ? '▲' : '▼'}
+                          </span>
+                        ) : (
+                          <span className="sort sortHint">↕</span>
+                        )}
                       </div>
                     </th>
                   );
@@ -325,7 +474,10 @@ export default function OddsTable() {
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext()
+                    )}
                   </td>
                 ))}
               </tr>
@@ -335,7 +487,8 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Click any column header to sort. Shift-click to multi-sort. Use the “Columns” menu to hide/show columns.
+        Tip: Click any column header to sort. Shift-click to multi-sort.
+        Use the “Columns” menu to hide/show columns.
       </div>
     </div>
   );
