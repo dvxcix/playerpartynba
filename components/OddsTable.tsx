@@ -145,12 +145,7 @@ export default function OddsTable() {
 
   const rows = data?.rows ?? [];
 
-  const todayRows = React.useMemo(() => {
-    return rows.filter((r) => {
-      if (!r.commence_time) return true;
-      return isWithinUserLocalToday(r.commence_time);
-    });
-  }, [rows]);
+  const todayRows = rows;
 
   const games = React.useMemo(
     () => uniq(todayRows.map((r) => r.game ?? 'Unknown')).sort(),
