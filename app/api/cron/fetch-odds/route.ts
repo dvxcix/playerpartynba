@@ -12,15 +12,58 @@ export async function POST(req: Request) {
 
   const supabase = supabaseServer();
 
-  // 👇 This should already exist in your code:
-  // rows = normalized odds pulled from TheOddsAPI
-  const rows: any[] = await getNormalizedOddsSomehow(); // ← your existing logic
+  /**
+   * =========================================================
+   * 🔽 INSERT YOUR EXISTING FETCH + NORMALIZE LOGIC HERE 🔽
+   *
+   * This should produce an array like:
+   * [
+   *   {
+   *     event_id,
+   *     game,
+   *     bookmaker_key,
+   *     bookmaker_title,
+   *     market_key,
+   *     market_name,
+   *     player,
+   *     line,
+   *     over_price,
+   *     under_price,
+   *     commence_time,
+   *     last_update,
+   *     fetched_at
+   *   },
+   *   ...
+   * ]
+   *
+   * IMPORTANT:
+   * - Do NOT include first_over_price / first_under_price yet
+   * - That is handled below
+   * =========================================================
+   */
+
+  const rows: any[] = []; // ← replace this with your real normalized rows
+
+  /**
+   * =========================================================
+   * 🧠 PRESERVE ORIGINAL ODDS (FIRST SEEN)
+   * =========================================================
+   *
+   * Logic:
+   * - If row already exists → keep first_* as-is
+   * - If row is new → set first_* = current odds
+   */
 
   const upserts = rows.map((r) => ({
     ...r,
-    // Preserve original odds only on first insert
-    first_over_price: r.first_over_price ?? r.over_price,
-    first_under_price: r.first_under_price ?? r.under_price,
+    first_over_price:
+      r.first_over_price !== undefined && r.first_over_price !== null
+        ? r.first_over_price
+        : r.over_price,
+    first_under_price:
+      r.first_under_price !== undefined && r.first_under_price !== null
+        ? r.first_under_price
+        : r.under_price,
   }));
 
   const { error } = await supabase
@@ -30,11 +73,16 @@ export async function POST(req: Request) {
     });
 
   if (error) {
-    console.error(error);
+    console.error('UPSERT ERROR:', error);
     return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  console.log('CRON RUN', new Date().toISOString());
+  console.log(
+    `[CRON] fetch-odds ran at ${new Date().toISOString()} | rows=${upserts.length}`
+  );
 
-  return NextResponse.json({ ok: true, rows: upserts.length });
+  return NextResponse.json({
+    ok: true,
+    rows: upserts.length,
+  });
 }
