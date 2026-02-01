@@ -145,7 +145,6 @@ export default function OddsTable() {
 
   const rows = data?.rows ?? [];
 
-  // ✅ FIXED: user-local-day window (12:00am–11:59pm)
   const todayRows = React.useMemo(() => {
     return rows.filter((r) => {
       if (!r.commence_time) return true;
@@ -157,7 +156,6 @@ export default function OddsTable() {
     () => uniq(todayRows.map((r) => r.game ?? 'Unknown')).sort(),
     [todayRows]
   );
-
   const markets = React.useMemo(
     () =>
       uniq(
@@ -170,7 +168,6 @@ export default function OddsTable() {
       ).sort(),
     [todayRows]
   );
-
   const bookmakers = React.useMemo(
     () =>
       uniq(
@@ -186,19 +183,18 @@ export default function OddsTable() {
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
   const [playerQuery, setPlayerQuery] = React.useState('');
 
+  // ✅ FIX: expand selections when new options appear
   React.useEffect(() => {
-    if (games.length && gameSel.size === 0) setGameSel(new Set(games));
-  }, [games, gameSel.size]);
+    setGameSel((prev) => new Set([...prev, ...games]));
+  }, [games]);
 
   React.useEffect(() => {
-    if (markets.length && marketSel.size === 0)
-      setMarketSel(new Set(markets));
-  }, [markets, marketSel.size]);
+    setMarketSel((prev) => new Set([...prev, ...markets]));
+  }, [markets]);
 
   React.useEffect(() => {
-    if (bookmakers.length && bookSel.size === 0)
-      setBookSel(new Set(bookmakers));
-  }, [bookmakers, bookSel.size]);
+    setBookSel((prev) => new Set([...prev, ...bookmakers]));
+  }, [bookmakers]);
 
   const filteredRows = React.useMemo(() => {
     const q = playerQuery.trim().toLowerCase();
