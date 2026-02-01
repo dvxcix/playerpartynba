@@ -13,12 +13,15 @@ export async function GET(req: Request) {
 
   const supabase = supabaseServer();
 
-  // ✅ IMPORTANT FIX:
-  // DO NOT time-filter here.
-  // Frontend already filters by user's local "today".
+  /**
+   * IMPORTANT:
+   * Order by commence_time FIRST so rows are mixed across games.
+   * Ordering by `game` first + LIMIT will truncate to a single game.
+   */
   const { data, error } = await supabase
     .from('odds_lines_current')
     .select('*')
+    .order('commence_time', { ascending: true })
     .order('game', { ascending: true })
     .order('player', { ascending: true })
     .order('market_key', { ascending: true })
