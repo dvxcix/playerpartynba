@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const SPORT = 'basketball_nba';
 const REGIONS = 'us';
+const ODDS_FORMAT = 'american'; // 🔑 FIX
 
 const MARKETS = [
   'player_points_alternate',
@@ -22,9 +23,6 @@ const MARKETS = [
   'player_points_rebounds_assists_alternate',
 ].join(',');
 
-/* =========================
-   MARKET DISPLAY NAMES
-   ========================= */
 const MARKET_LABELS: Record<string, string> = {
   player_points_alternate: 'Alt Points',
   player_rebounds_alternate: 'Alt Rebounds',
@@ -39,9 +37,6 @@ const MARKET_LABELS: Record<string, string> = {
   player_points_rebounds_assists_alternate: 'Alt PRA',
 };
 
-/* =========================
-   NBA TEAM ABBREVIATIONS
-   ========================= */
 const TEAM_ABBR: Record<string, string> = {
   'Atlanta Hawks': 'ATL',
   'Boston Celtics': 'BOS',
@@ -75,8 +70,6 @@ const TEAM_ABBR: Record<string, string> = {
   'Washington Wizards': 'WAS',
 };
 
-/* ========================= */
-
 async function fetchJson(url: string) {
   const res = await fetch(url);
   if (!res.ok) {
@@ -96,27 +89,24 @@ export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY!;
   const fetchedAt = new Date().toISOString();
 
-  /* =========================
-     FETCH EVENTS
-     ========================= */
+  // 1️⃣ Fetch events
   const events = await fetchJson(
     `${ODDS_API_BASE}/sports/${SPORT}/events?apiKey=${apiKey}`
   );
 
   const rows: any[] = [];
 
-  /* =========================
-     FETCH ODDS PER EVENT
-     ========================= */
+  // 2️⃣ Fetch odds per event
   for (const event of events) {
     const odds = await fetchJson(
       `${ODDS_API_BASE}/sports/${SPORT}/events/${event.id}/odds` +
-      `?apiKey=${apiKey}&regions=${REGIONS}&markets=${MARKETS}`
+        `?apiKey=${apiKey}` +
+        `&regions=${REGIONS}` +
+        `&markets=${MARKETS}` +
+        `&oddsFormat=${ODDS_FORMAT}` // 🔑 FIX
     );
 
-    const away = TEAM_ABBR[event.away_team] ?? event.away_team;
-    const home = TEAM_ABBR[event.home_team] ?? event.home_team;
-    const game = `${away}@${home}`;
+    const game = `${TEAM_ABBR[event.away_team] ?? event.away_team}@${TEAM_ABBR[event.home_team] ?? event.home_team}`;
 
     for (const bookmaker of odds.bookmakers ?? []) {
       for (const market of bookmaker.markets ?? []) {
@@ -158,9 +148,7 @@ export async function POST(req: Request) {
     }
   }
 
-  /* =========================
-     UPSERT
-     ========================= */
+  // 3️⃣ Insert / update
   const { error } = await supabase
     .from('odds_lines_current')
     .upsert(rows, {
@@ -175,7 +163,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, rows: rows.length });
 }
 
-/* GET = manual test */
+// GET for browser testing
 export async function GET() {
   return POST(
     new Request('http://localhost', {
