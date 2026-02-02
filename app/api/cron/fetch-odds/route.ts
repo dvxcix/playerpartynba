@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const SPORT = 'basketball_nba';
 const REGIONS = 'us';
+
 const MARKETS = [
   'player_points_alternate',
   'player_rebounds_alternate',
@@ -21,11 +22,29 @@ const MARKETS = [
   'player_points_rebounds_assists_alternate',
 ].join(',');
 
+type NormalizedRow = {
+  event_id: string;
+  commence_time: string;
+  game: string;
+  bookmaker_key: string;
+  bookmaker_title: string;
+  market_key: string;
+  market_name: string;
+  player: string;
+  line: number;
+  over_price: number | null;
+  under_price: number | null;
+  first_over_price?: number | null;
+  first_under_price?: number | null;
+  last_update: string;
+  fetched_at: string;
+};
+
 async function fetchJson(url: string) {
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OddsAPI error ${res.status}: ${text}`);
+    throw new Error(`OddsAPI ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -37,12 +56,14 @@ async function runFetch() {
 
   console.log('[CRON] Fetching NBA events');
 
+  // 1️⃣ Fetch events
   const events = await fetchJson(
     `${ODDS_API_BASE}/sports/${SPORT}/events?apiKey=${apiKey}`
   );
 
-  let rows: any[] = [];
+  const rows: NormalizedRow[] = [];
 
+  // 2️⃣ Fetch odds per event
   for (const event of events) {
     const oddsUrl =
       `${ODDS_API_BASE}/sports/${SPORT}/events/${event.id}/odds` +
@@ -52,19 +73,37 @@ async function runFetch() {
 
     for (const bookmaker of odds.bookmakers ?? []) {
       for (const market of bookmaker.markets ?? []) {
-        const grouped: Record<string, any> = {};
+
+        // 🔑 Correct grouping: player + LINE (o.point)
+        const grouped: Record<
+          string,
+          {
+            player: string;
+            line: number;
+            over_price: number | null;
+            under_price: number | null;
+          }
+        > = {};
 
         for (const o of market.outcomes ?? []) {
-          const key = `${o.description}|${o.point}`;
-          grouped[key] ||= {
-            player: o.description,
-            line: o.point,
-            over_price: null,
-            under_price: null,
-          };
+          if (o.point == null || o.price == null) continue;
 
-          if (o.name === 'Over') grouped[key].over_price = o.price;
-          if (o.name === 'Under') grouped[key].under_price = o.price;
+          const key = `${o.description}|${o.point}`;
+
+          if (!grouped[key]) {
+            grouped[key] = {
+              player: o.description,
+              line: o.point,            // ✅ LINE
+              over_price: null,
+              under_price: null,
+            };
+          }
+
+          if (o.name === 'Over') {
+            grouped[key].over_price = o.price;   // ✅ ODDS
+          } else if (o.name === 'Under') {
+            grouped[key].under_price = o.price;  // ✅ ODDS
+          }
         }
 
         for (const g of Object.values(grouped)) {
@@ -90,8 +129,8 @@ async function runFetch() {
 
   console.log('[CRON] Normalized rows:', rows.length);
 
+  // 3️⃣ Upsert while PRESERVING original odds
   for (const r of rows) {
-    // Check if row already exists
     const { data: existing } = await supabase
       .from('odds_lines_current')
       .select('first_over_price, first_under_price')
@@ -120,6 +159,10 @@ async function runFetch() {
   return rows.length;
 }
 
+/**
+ * POST → Vercel cron (auth required)
+ * GET  → manual test (no auth)
+ */
 export async function POST(req: Request) {
   const auth = req.headers.get('authorization');
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -128,6 +171,7 @@ export async function POST(req: Request) {
 
   try {
     const count = await runFetch();
+    console.log(`[CRON] Completed, rows=${count}`);
     return NextResponse.json({ ok: true, rows: count });
   } catch (err: any) {
     console.error(err);
