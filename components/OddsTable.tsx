@@ -10,8 +10,6 @@ import {
   getSortedRowModel,
   SortingState,
   useReactTable,
-  ColumnFiltersState,
-  VisibilityState,
 } from '@tanstack/react-table';
 
 type OddsRow = {
@@ -20,8 +18,14 @@ type OddsRow = {
   market_name: string | null;
   player: string;
   line: number;
+
   over_price: number | null;
   under_price: number | null;
+
+  // 👇 REQUIRED for movement
+  first_over_price: number | null;
+  first_under_price: number | null;
+
   bookmaker_title: string | null;
 };
 
@@ -46,16 +50,16 @@ function fmtAmerican(n: number | null) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-/* ========= COLOR LOGIC (FIXED) ========= */
-function overClass(n: number | null) {
-  if (n == null) return '';
-  return n > 300 ? 'text-green-600 font-semibold' : '';
+/* =========================
+   MOVEMENT + COLOR LOGIC
+   ========================= */
+function movementClass(current: number | null, original: number | null) {
+  if (current == null || original == null) return '';
+  if (current > original) return '!text-green-600 font-semibold';
+  if (current < original) return '!text-red-600 font-semibold';
+  return '!text-yellow-400 font-semibold'; // unchanged
 }
-function underClass(n: number | null) {
-  if (n == null) return '';
-  return n < -210 ? 'text-red-600 font-semibold' : '';
-}
-/* ====================================== */
+/* ========================= */
 
 function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr)).filter(Boolean) as T[];
@@ -105,7 +109,6 @@ export default function OddsTable() {
   const { data } = useSWR<{ rows: OddsRow[] }>('/api/odds/latest', fetcher);
   const rows = data?.rows ?? [];
 
-  // Dimension lists
   const games = React.useMemo(
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
@@ -127,21 +130,9 @@ export default function OddsTable() {
     [rows]
   );
 
-  const overOdds = React.useMemo(
-    () => uniq(rows.map((r) => r.over_price).filter((v) => v != null)).sort((a, b) => Number(a) - Number(b)),
-    [rows]
-  );
-  const underOdds = React.useMemo(
-    () => uniq(rows.map((r) => r.under_price).filter((v) => v != null)).sort((a, b) => Number(a) - Number(b)),
-    [rows]
-  );
-
-  // Start with NOTHING selected
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
-  const [overSel, setOverSel] = React.useState<Set<string>>(new Set());
-  const [underSel, setUnderSel] = React.useState<Set<string>>(new Set());
 
   const filteredRows = React.useMemo(() => {
     if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
@@ -157,12 +148,9 @@ export default function OddsTable() {
 
       if (!bookSel.has(r.bookmaker_title ?? 'Unknown')) return false;
 
-      if (overSel.size && !overSel.has(String(r.over_price))) return false;
-      if (underSel.size && !underSel.has(String(r.under_price))) return false;
-
       return true;
     });
-  }, [rows, gameSel, marketSel, bookSel, overSel, underSel]);
+  }, [rows, gameSel, marketSel, bookSel]);
 
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'line', desc: true },
@@ -181,19 +169,43 @@ export default function OddsTable() {
     },
     { accessorKey: 'line', header: 'LINE' },
     {
-      accessorKey: 'over_price',
       header: 'OVER',
-      cell: (i) => {
-        const v = i.getValue() as number | null;
-        return <span className={`mono ${overClass(v)}`}>{fmtAmerican(v)}</span>;
+      cell: ({ row }) => {
+        const c = row.original.over_price;
+        const o = row.original.first_over_price;
+
+        return (
+          <span className="mono">
+            {o != null && o !== c && (
+              <span className="line-through opacity-60 mr-1">
+                {fmtAmerican(o)}
+              </span>
+            )}
+            <span className={movementClass(c, o)}>
+              {fmtAmerican(c)}
+            </span>
+          </span>
+        );
       },
     },
     {
-      accessorKey: 'under_price',
       header: 'UNDER',
-      cell: (i) => {
-        const v = i.getValue() as number | null;
-        return <span className={`mono ${underClass(v)}`}>{fmtAmerican(v)}</span>;
+      cell: ({ row }) => {
+        const c = row.original.under_price;
+        const o = row.original.first_under_price;
+
+        return (
+          <span className="mono">
+            {o != null && o !== c && (
+              <span className="line-through opacity-60 mr-1">
+                {fmtAmerican(o)}
+              </span>
+            )}
+            <span className={movementClass(c, o)}>
+              {fmtAmerican(c)}
+            </span>
+          </span>
+        );
       },
     },
     { accessorKey: 'bookmaker_title', header: 'BOOK' },
@@ -215,8 +227,6 @@ export default function OddsTable() {
         <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} />
         <CheckboxList title="Markets" options={markets} selected={marketSel} setSelected={setMarketSel} />
         <CheckboxList title="Books" options={books} selected={bookSel} setSelected={setBookSel} />
-        <CheckboxList title="OVER Odds" options={overOdds.map(fmtAmerican)} selected={overSel} setSelected={setOverSel} />
-        <CheckboxList title="UNDER Odds" options={underOdds.map(fmtAmerican)} selected={underSel} setSelected={setUnderSel} />
       </div>
 
       <div className="tableWrap">
@@ -225,7 +235,7 @@ export default function OddsTable() {
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((h) => (
-                  <th key={h.id} onClick={h.column.getToggleSortingHandler()}>
+                  <th key={h.id}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </th>
                 ))}
@@ -247,7 +257,7 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Select Games → Markets → Books → OVER/UNDER odds to narrow like Excel.
+        Tip: Original odds are struck through. Green = moved up, Red = moved down, Yellow = unchanged.
       </div>
     </div>
   );
