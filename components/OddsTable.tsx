@@ -22,7 +22,6 @@ type OddsRow = {
   over_price: number | null;
   under_price: number | null;
 
-  // 👇 REQUIRED for movement
   first_over_price: number | null;
   first_under_price: number | null;
 
@@ -57,100 +56,32 @@ function movementClass(current: number | null, original: number | null) {
   if (current == null || original == null) return '';
   if (current > original) return '!text-green-600 font-semibold';
   if (current < original) return '!text-red-600 font-semibold';
-  return '!text-yellow-400 font-semibold'; // unchanged
+  return '!text-yellow-400 font-semibold';
 }
 /* ========================= */
 
-function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr)).filter(Boolean) as T[];
-}
+/* =========================
+   NUMERIC SORT FUNCTION
+   ========================= */
+const numericSort = (
+  rowA: any,
+  rowB: any,
+  columnId: string
+) => {
+  const a = rowA.getValue(columnId);
+  const b = rowB.getValue(columnId);
 
-function CheckboxList({
-  title,
-  options,
-  selected,
-  setSelected,
-}: {
-  title: string;
-  options: (string | number)[];
-  selected: Set<string>;
-  setSelected: (next: Set<string>) => void;
-}) {
-  return (
-    <div className="panel">
-      <div className="panelHeader">
-        <div className="panelTitle">{title}</div>
-      </div>
-      <div className="panelBody" style={{ maxHeight: 220, overflow: 'auto' }}>
-        {options.map((o) => {
-          const key = String(o);
-          return (
-            <label key={key} className="checkRow">
-              <input
-                type="checkbox"
-                checked={selected.has(key)}
-                onChange={(e) => {
-                  const next = new Set(selected);
-                  if (e.target.checked) next.add(key);
-                  else next.delete(key);
-                  setSelected(next);
-                }}
-              />
-              <span>{key}</span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+
+  return a - b;
+};
+/* ========================= */
 
 export default function OddsTable() {
   const { data } = useSWR<{ rows: OddsRow[] }>('/api/odds/latest', fetcher);
   const rows = data?.rows ?? [];
-
-  const games = React.useMemo(
-    () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
-    [rows]
-  );
-  const markets = React.useMemo(
-    () =>
-      uniq(
-        rows.map(
-          (r) =>
-            r.market_name ??
-            MARKET_LABELS[r.market_key] ??
-            r.market_key
-        )
-      ).sort(),
-    [rows]
-  );
-  const books = React.useMemo(
-    () => uniq(rows.map((r) => r.bookmaker_title ?? 'Unknown')).sort(),
-    [rows]
-  );
-
-  const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
-  const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
-  const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
-
-  const filteredRows = React.useMemo(() => {
-    if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
-
-    return rows.filter((r) => {
-      if (!gameSel.has(r.game ?? 'Unknown')) return false;
-
-      const market =
-        r.market_name ??
-        MARKET_LABELS[r.market_key] ??
-        r.market_key;
-      if (!marketSel.has(market)) return false;
-
-      if (!bookSel.has(r.bookmaker_title ?? 'Unknown')) return false;
-
-      return true;
-    });
-  }, [rows, gameSel, marketSel, bookSel]);
 
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'line', desc: true },
@@ -158,7 +89,9 @@ export default function OddsTable() {
 
   const columns = React.useMemo<ColumnDef<OddsRow>[]>(() => [
     { accessorKey: 'game', header: 'GAME' },
+
     { accessorKey: 'player', header: 'PLAYER' },
+
     {
       id: 'market',
       header: 'MARKET',
@@ -167,9 +100,17 @@ export default function OddsTable() {
         MARKET_LABELS[r.market_key] ??
         r.market_key,
     },
-    { accessorKey: 'line', header: 'LINE' },
+
     {
+      accessorKey: 'line',
+      header: 'LINE',
+      sortingFn: numericSort,
+    },
+
+    {
+      accessorKey: 'over_price',
       header: 'OVER',
+      sortingFn: numericSort,
       cell: ({ row }) => {
         const c = row.original.over_price;
         const o = row.original.first_over_price;
@@ -188,8 +129,11 @@ export default function OddsTable() {
         );
       },
     },
+
     {
+      accessorKey: 'under_price',
       header: 'UNDER',
+      sortingFn: numericSort,
       cell: ({ row }) => {
         const c = row.original.under_price;
         const o = row.original.first_under_price;
@@ -208,11 +152,12 @@ export default function OddsTable() {
         );
       },
     },
+
     { accessorKey: 'bookmaker_title', header: 'BOOK' },
   ], []);
 
   const table = useReactTable({
-    data: filteredRows,
+    data: rows,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -222,43 +167,39 @@ export default function OddsTable() {
   });
 
   return (
-    <div>
-      <div className="grid2">
-        <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} />
-        <CheckboxList title="Markets" options={markets} selected={marketSel} setSelected={setMarketSel} />
-        <CheckboxList title="Books" options={books} selected={bookSel} setSelected={setBookSel} />
-      </div>
+    <div className="tableWrap">
+      <table className="table">
+        <thead>
+          {table.getHeaderGroups().map((hg) => (
+            <tr key={hg.id}>
+              {hg.headers.map((h) => (
+                <th
+                  key={h.id}
+                  onClick={h.column.getToggleSortingHandler()}
+                  className="sortable"
+                >
+                  {flexRender(h.column.columnDef.header, h.getContext())}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
 
-      <div className="tableWrap">
-        <table className="table">
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th key={h.id}>
-                    {flexRender(h.column.columnDef.header, h.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="small" style={{ marginTop: 12 }}>
-        Tip: Original odds are struck through. Green = moved up, Red = moved down, Yellow = unchanged.
-      </div>
+        <tbody>
+          {table.getRowModel().rows.map((row) => (
+            <tr key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id}>
+                  {flexRender(
+                    cell.column.columnDef.cell,
+                    cell.getContext()
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
