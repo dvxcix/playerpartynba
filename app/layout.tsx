@@ -1,5 +1,9 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import './globals.css';
+
+// 👇 import logo from /lib
+import PPicon from '@/lib/PPicon.png';
 
 export const metadata: Metadata = {
   title: 'NBA | PlayerParty',
@@ -14,14 +18,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {/* PlayerParty Logo */}
-              <img
-                src="/PPicon.png"
+              <Image
+                src={PPicon}
                 alt="PlayerParty"
-                style={{
-                  height: '36px',
-                  width: '36px',
-                  objectFit: 'contain',
-                }}
+                width={36}
+                height={36}
+                priority
               />
 
               {/* Title + subtitle */}
