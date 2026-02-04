@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const SPORT = 'basketball_nba';
 const REGIONS = 'us';
-const ODDS_FORMAT = 'american'; // 🔑 FIX
+const ODDS_FORMAT = 'american';
 
 const MARKETS = [
   'player_points_alternate',
@@ -23,6 +23,9 @@ const MARKETS = [
   'player_points_rebounds_assists_alternate',
 ].join(',');
 
+/* =========================
+   MARKET DISPLAY NAMES
+   ========================= */
 const MARKET_LABELS: Record<string, string> = {
   player_points_alternate: 'Alt Points',
   player_rebounds_alternate: 'Alt Rebounds',
@@ -37,6 +40,9 @@ const MARKET_LABELS: Record<string, string> = {
   player_points_rebounds_assists_alternate: 'Alt PRA',
 };
 
+/* =========================
+   NBA TEAM ABBREVIATIONS
+   ========================= */
 const TEAM_ABBR: Record<string, string> = {
   'Atlanta Hawks': 'ATL',
   'Boston Celtics': 'BOS',
@@ -89,42 +95,66 @@ export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY!;
   const fetchedAt = new Date().toISOString();
 
-  // 1️⃣ Fetch events
+  /* =========================
+     FETCH EVENTS
+     ========================= */
   const events = await fetchJson(
     `${ODDS_API_BASE}/sports/${SPORT}/events?apiKey=${apiKey}`
   );
 
   const rows: any[] = [];
 
-  // 2️⃣ Fetch odds per event
+  /* =========================
+     FETCH ODDS PER EVENT
+     ========================= */
   for (const event of events) {
     const odds = await fetchJson(
       `${ODDS_API_BASE}/sports/${SPORT}/events/${event.id}/odds` +
         `?apiKey=${apiKey}` +
         `&regions=${REGIONS}` +
         `&markets=${MARKETS}` +
-        `&oddsFormat=${ODDS_FORMAT}` // 🔑 FIX
+        `&oddsFormat=${ODDS_FORMAT}`
     );
 
-    const game = `${TEAM_ABBR[event.away_team] ?? event.away_team}@${TEAM_ABBR[event.home_team] ?? event.home_team}`;
+    const away = TEAM_ABBR[event.away_team] ?? event.away_team;
+    const home = TEAM_ABBR[event.home_team] ?? event.home_team;
+    const game = `${away}@${home}`;
 
     for (const bookmaker of odds.bookmakers ?? []) {
       for (const market of bookmaker.markets ?? []) {
-        const grouped: Record<string, any> = {};
+        const grouped: Record<
+          string,
+          {
+            player: string;
+            line: number;
+            over_price: number | null;
+            under_price: number | null;
+          }
+        > = {};
 
         for (const o of market.outcomes ?? []) {
           if (o.price == null || o.point == null) continue;
 
           const key = `${o.description}|${o.point}`;
-          grouped[key] ||= {
-            player: o.description,
-            line: o.point,
-            over_price: null,
-            under_price: null,
-          };
 
-          if (o.name === 'Over') grouped[key].over_price = o.price;
-          if (o.name === 'Under') grouped[key].under_price = o.price;
+          if (!grouped[key]) {
+            grouped[key] = {
+              player: o.description,
+              line: o.point,
+              over_price: null,
+              under_price: null,
+            };
+          }
+
+          const side = o.name?.toLowerCase();
+
+          if (side === 'over' || side === 'yes') {
+            grouped[key].over_price = o.price;
+          }
+
+          if (side === 'under' || side === 'no') {
+            grouped[key].under_price = o.price;
+          }
         }
 
         for (const g of Object.values(grouped)) {
@@ -148,7 +178,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // 3️⃣ Insert / update
+  /* =========================
+     UPSERT
+     ========================= */
   const { error } = await supabase
     .from('odds_lines_current')
     .upsert(rows, {
@@ -163,7 +195,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, rows: rows.length });
 }
 
-// GET for browser testing
+/* GET = manual test */
 export async function GET() {
   return POST(
     new Request('http://localhost', {
