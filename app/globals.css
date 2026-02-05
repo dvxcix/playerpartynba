@@ -223,3 +223,15 @@ details > summary::-webkit-details-marker { display: none; }
   outline-offset: -2px;
   background: rgba(245, 197, 66, 0.08);
 }
+.ppp-pulse {
+  animation: pppPulse 1.2s ease-out;
+}
+
+@keyframes pppPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 197, 66, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(245, 197, 66, 0);
+  }
+}
