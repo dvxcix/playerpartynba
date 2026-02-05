@@ -47,12 +47,19 @@ import POR from '@/lib/nbateams/TRAILBLAZERS.png';
 import GSW from '@/lib/nbateams/WARRIORS.png';
 import WAS from '@/lib/nbateams/WIZARDS.png';
 
-/* ========================= */
-
+/* =========================
+   TEAM LOGO MAP + ALIASES
+   ========================= */
 const TEAM_LOGOS: Record<string, any> = {
-  PHI, MIL, CHI, CLE, BOS, LAC, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
+  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
   DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
+
+  // Clippers (ALL accepted forms)
+  LAC,
+  'LOS ANGELES CLIPPERS': LAC,
+  'LA CLIPPERS': LAC,
 };
+/* ========================= */
 
 type OddsRow = {
   game: string | null;
@@ -86,7 +93,6 @@ function fmtAmerican(n: number | null) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-/* ========= COLOR LOGIC ========= */
 function overClass(n: number | null) {
   if (n == null) return '';
   return n > 300 ? 'text-green-600 font-semibold' : '';
@@ -95,25 +101,32 @@ function underClass(n: number | null) {
   if (n == null) return '';
   return n < -210 ? 'text-red-600 font-semibold' : '';
 }
-/* =============================== */
 
 function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr)).filter(Boolean) as T[];
 }
 
 /* =========================
-   GAME LOGO COMPONENT
+   GAME LOGO RENDERER
    ========================= */
+function normalizeTeamKey(team: string) {
+  return team.toUpperCase().trim();
+}
+
 function GameLogos({ game }: { game: string }) {
-  const [away, home] = game.split('@');
-  const AwayLogo = TEAM_LOGOS[away];
-  const HomeLogo = TEAM_LOGOS[home];
+  const [awayRaw, homeRaw] = game.split('@');
+
+  const awayKey = normalizeTeamKey(awayRaw);
+  const homeKey = normalizeTeamKey(homeRaw);
+
+  const AwayLogo = TEAM_LOGOS[awayKey];
+  const HomeLogo = TEAM_LOGOS[homeKey];
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      {AwayLogo && <Image src={AwayLogo} alt={away} width={22} height={22} />}
+      {AwayLogo && <Image src={AwayLogo} alt={awayRaw} width={22} height={22} />}
       <span>@</span>
-      {HomeLogo && <Image src={HomeLogo} alt={home} width={22} height={22} />}
+      {HomeLogo && <Image src={HomeLogo} alt={homeRaw} width={22} height={22} />}
     </div>
   );
 }
@@ -164,7 +177,6 @@ export default function OddsTable() {
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
   );
-
   const markets = React.useMemo(
     () =>
       uniq(
@@ -177,7 +189,6 @@ export default function OddsTable() {
       ).sort(),
     [rows]
   );
-
   const books = React.useMemo(
     () => uniq(rows.map((r) => r.bookmaker_title ?? 'Unknown')).sort(),
     [rows]
@@ -189,18 +200,14 @@ export default function OddsTable() {
 
   const filteredRows = React.useMemo(() => {
     if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
-
     return rows.filter((r) => {
       if (!gameSel.has(r.game ?? 'Unknown')) return false;
-
       const market =
         r.market_name ??
         MARKET_LABELS[r.market_key] ??
         r.market_key;
       if (!marketSel.has(market)) return false;
-
       if (!bookSel.has(r.bookmaker_title ?? 'Unknown')) return false;
-
       return true;
     });
   }, [rows, gameSel, marketSel, bookSel]);
@@ -290,7 +297,7 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Games are shown using team logos instead of abbreviations.
+        Tip: Clippers logos render correctly whether the game string uses “LAC” or “Los Angeles Clippers”.
       </div>
     </div>
   );
