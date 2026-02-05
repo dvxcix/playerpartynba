@@ -54,7 +54,6 @@ const TEAM_LOGOS: Record<string, any> = {
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
 };
-
 /* ========================= */
 
 type OddsRow = {
@@ -89,6 +88,7 @@ function fmtAmerican(n: number | null) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
+/* ========= COLOR LOGIC (UNCHANGED) ========= */
 function overClass(n: number | null) {
   if (n == null) return '';
   return n > 300 ? 'text-green-600 font-semibold' : '';
@@ -97,11 +97,15 @@ function underClass(n: number | null) {
   if (n == null) return '';
   return n < -210 ? 'text-red-600 font-semibold' : '';
 }
+/* =========================================== */
 
 function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr)).filter(Boolean) as T[];
 }
 
+/* =========================
+   GAME LOGO RENDERER
+   ========================= */
 function normalizeTeamKey(team: string) {
   return team.toUpperCase().trim();
 }
@@ -119,6 +123,7 @@ function GameLogos({ game }: { game: string }) {
     </div>
   );
 }
+/* ========================= */
 
 function CheckboxList({
   title,
@@ -128,7 +133,7 @@ function CheckboxList({
   renderOption,
 }: {
   title: string;
-  options: string[];
+  options: (string | number)[];
   selected: Set<string>;
   setSelected: (next: Set<string>) => void;
   renderOption?: (o: string) => React.ReactNode;
@@ -139,21 +144,24 @@ function CheckboxList({
         <div className="panelTitle">{title}</div>
       </div>
       <div className="panelBody" style={{ maxHeight: 220, overflow: 'auto' }}>
-        {options.map((o) => (
-          <label key={o} className="checkRow">
-            <input
-              type="checkbox"
-              checked={selected.has(o)}
-              onChange={(e) => {
-                const next = new Set(selected);
-                if (e.target.checked) next.add(o);
-                else next.delete(o);
-                setSelected(next);
-              }}
-            />
-            {renderOption ? renderOption(o) : <span>{o}</span>}
-          </label>
-        ))}
+        {options.map((o) => {
+          const key = String(o);
+          return (
+            <label key={key} className="checkRow">
+              <input
+                type="checkbox"
+                checked={selected.has(key)}
+                onChange={(e) => {
+                  const next = new Set(selected);
+                  if (e.target.checked) next.add(key);
+                  else next.delete(key);
+                  setSelected(next);
+                }}
+              />
+              {renderOption ? renderOption(key) : <span>{key}</span>}
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -163,17 +171,21 @@ export default function OddsTable() {
   const { data } = useSWR<{ rows: OddsRow[] }>('/api/odds/latest', fetcher);
   const rows = data?.rows ?? [];
 
-  /* 🔑 STATE — declared BEFORE useMemo */
+  // ✅ Start with NOTHING selected (UNCHANGED)
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
+  const [overSel, setOverSel] = React.useState<Set<string>>(new Set());
+  const [underSel, setUnderSel] = React.useState<Set<string>>(new Set());
+
+  // ✅ NEW: players selection (ADDED)
   const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
 
+  // Dimension lists (UNCHANGED)
   const games = React.useMemo(
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
   );
-
   const markets = React.useMemo(
     () =>
       uniq(
@@ -186,13 +198,27 @@ export default function OddsTable() {
       ).sort(),
     [rows]
   );
-
   const books = React.useMemo(
     () => uniq(rows.map((r) => r.bookmaker_title ?? 'Unknown')).sort(),
     [rows]
   );
 
-  /* ✅ FIXED: gameSel now exists before use */
+  const overOdds = React.useMemo(
+    () =>
+      uniq(rows.map((r) => r.over_price).filter((v) => v != null)).sort(
+        (a, b) => Number(a) - Number(b)
+      ),
+    [rows]
+  );
+  const underOdds = React.useMemo(
+    () =>
+      uniq(rows.map((r) => r.under_price).filter((v) => v != null)).sort(
+        (a, b) => Number(a) - Number(b)
+      ),
+    [rows]
+  );
+
+  // ✅ NEW: Players list depends on selected games (ADDED, no behavior changes elsewhere)
   const players = React.useMemo(() => {
     if (!gameSel.size) return [];
     return uniq(
@@ -204,6 +230,7 @@ export default function OddsTable() {
 
   const filteredRows = React.useMemo(() => {
     if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
+
     return rows.filter((r) => {
       if (!gameSel.has(r.game ?? 'Unknown')) return false;
 
@@ -215,11 +242,15 @@ export default function OddsTable() {
 
       if (!bookSel.has(r.bookmaker_title ?? 'Unknown')) return false;
 
+      if (overSel.size && !overSel.has(String(r.over_price))) return false;
+      if (underSel.size && !underSel.has(String(r.under_price))) return false;
+
+      // ✅ NEW: Player filter (only when playerSel is non-empty)
       if (playerSel.size && !playerSel.has(r.player)) return false;
 
       return true;
     });
-  }, [rows, gameSel, marketSel, bookSel, playerSel]);
+  }, [rows, gameSel, marketSel, bookSel, overSel, underSel, playerSel]);
 
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'line', desc: true },
@@ -273,9 +304,19 @@ export default function OddsTable() {
   return (
     <div>
       <div className="grid2">
-        <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} renderOption={(o) => <GameLogos game={o} />} />
+        <CheckboxList
+          title="Games"
+          options={games}
+          selected={gameSel}
+          setSelected={setGameSel}
+          renderOption={(o) => <GameLogos game={o} />}
+        />
         <CheckboxList title="Markets" options={markets} selected={marketSel} setSelected={setMarketSel} />
         <CheckboxList title="Books" options={books} selected={bookSel} setSelected={setBookSel} />
+        <CheckboxList title="OVER Odds" options={overOdds.map(fmtAmerican)} selected={overSel} setSelected={setOverSel} />
+        <CheckboxList title="UNDER Odds" options={underOdds.map(fmtAmerican)} selected={underSel} setSelected={setUnderSel} />
+
+        {/* ✅ NEW: Players panel added AFTER UNDER Odds (next to it in grid flow) */}
         <CheckboxList title="Players" options={players} selected={playerSel} setSelected={setPlayerSel} />
       </div>
 
@@ -307,7 +348,7 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Player list updates dynamically based on selected games.
+        Tip: Select Games → Markets → Books → OVER/UNDER odds, then filter Players from selected games.
       </div>
     </div>
   );
