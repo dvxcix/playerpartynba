@@ -185,14 +185,14 @@ export default function ClientHeader() {
             </button>
 
             <div className="panelHeader">
-              <div className="panelTitle">👑 PPP (-114 / -114 Props)</div>
+              <div className="panelTitle">👑 PlayerParty Picks</div>
             </div>
 
             <div className="panelBody">
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No -114 / -114 props found.</div>
+                <div>No playerparty picks found.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
