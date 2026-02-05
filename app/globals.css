@@ -218,3 +218,8 @@ details > summary::-webkit-details-marker { display: none; }
   max-height: 320px;
   overflow: auto;
 }
+.ppp-highlight {
+  outline: 2px solid #f5c542;
+  outline-offset: -2px;
+  background: rgba(245, 197, 66, 0.08);
+}
