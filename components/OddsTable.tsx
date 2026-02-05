@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-table';
 
 /* =========================
-   ✅ ADDITION #1: PPP CONTEXT
+   PPP CONTEXT (ADDITIVE)
    ========================= */
 import { usePPP } from '@/components/PPPContext';
 
@@ -59,7 +59,6 @@ const TEAM_LOGOS: Record<string, any> = {
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
 };
-/* ========================= */
 
 type OddsRow = {
   game: string | null;
@@ -93,7 +92,7 @@ function fmtAmerican(n: number | null) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-/* ========= COLOR LOGIC (UNCHANGED) ========= */
+/* ========= COLOR LOGIC ========= */
 function overClass(n: number | null) {
   if (n == null) return '';
   return n > 300 ? 'text-green-600 font-semibold' : '';
@@ -102,15 +101,12 @@ function underClass(n: number | null) {
   if (n == null) return '';
   return n < -210 ? 'text-red-600 font-semibold' : '';
 }
-/* =========================================== */
+/* =============================== */
 
 function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr)).filter(Boolean) as T[];
 }
 
-/* =========================
-   GAME LOGO RENDERER
-   ========================= */
 function normalizeTeamKey(team: string) {
   return team.toUpperCase().trim();
 }
@@ -128,7 +124,6 @@ function GameLogos({ game }: { game: string }) {
     </div>
   );
 }
-/* ========================= */
 
 function CheckboxList({
   title,
@@ -177,11 +172,11 @@ export default function OddsTable() {
   const rows = data?.rows ?? [];
 
   /* =========================
-     ✅ ADDITION #2: READ PPP KEYS
+     PPP HOOKS (ADDITIVE)
      ========================= */
-  const { pppKeys } = usePPP();
+  const { pppKeys, registerRow } = usePPP();
 
-  // Start with NOTHING selected (UNCHANGED)
+  // Filters (unchanged)
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
@@ -189,7 +184,6 @@ export default function OddsTable() {
   const [underSel, setUnderSel] = React.useState<Set<string>>(new Set());
   const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
 
-  // Dimension lists (UNCHANGED)
   const games = React.useMemo(
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
@@ -250,7 +244,6 @@ export default function OddsTable() {
 
       if (overSel.size && !overSel.has(String(r.over_price))) return false;
       if (underSel.size && !underSel.has(String(r.under_price))) return false;
-
       if (playerSel.size && !playerSel.has(r.player)) return false;
 
       return true;
@@ -337,27 +330,22 @@ export default function OddsTable() {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              /* =========================
-                 ✅ ADDITION #3: PPP HIGHLIGHT
-                 ========================= */
-              <tr
-                key={row.id}
-                className={
-                  pppKeys.has(
-                    `${row.original.game}|${row.original.player}|${row.original.market_name}|${row.original.line}|${row.original.bookmaker_title}`
-                  )
-                    ? 'ppp-highlight'
-                    : ''
-                }
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {table.getRowModel().rows.map((row) => {
+              const key = `${row.original.game}|${row.original.player}|${row.original.market_name}|${row.original.line}|${row.original.bookmaker_title}`;
+              return (
+                <tr
+                  key={row.id}
+                  ref={(el) => registerRow(key, el)}
+                  className={pppKeys.has(key) ? 'ppp-highlight' : ''}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
