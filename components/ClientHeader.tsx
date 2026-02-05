@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import PPicon from '@/lib/PPicon.png';
+import { usePPP } from '@/components/PPPContext';
 
 type PPPRow = {
   game: string;
@@ -18,6 +19,7 @@ export default function ClientHeader() {
   const [showPPP, setShowPPP] = useState(false);
   const [pppRows, setPppRows] = useState<PPPRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
+  const { setPppKeys } = usePPP();
 
   useEffect(() => {
     if (!showPPP) return;
@@ -26,13 +28,25 @@ export default function ClientHeader() {
     fetch('/api/odds/latest')
       .then((r) => r.json())
       .then((data) => {
-        const rows = (data.rows || []).filter(
-          (r: any) => r.over_price === -114 && r.under_price === -114
-        );
+        const rows = (data.rows || [])
+          .filter(
+            (r: any) => r.over_price === -114 && r.under_price === -114
+          )
+          .sort((a: any, b: any) => a.game.localeCompare(b.game));
+
         setPppRows(rows);
+
+        setPppKeys(
+          new Set(
+            rows.map(
+              (r: any) =>
+                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
+            )
+          )
+        );
       })
       .finally(() => setLoadingPPP(false));
-  }, [showPPP]);
+  }, [showPPP, setPppKeys]);
 
   return (
     <>
@@ -110,42 +124,78 @@ export default function ClientHeader() {
             </button>
 
             <div className="panelHeader">
-              <div className="panelTitle">👑 PlayerParty Picks</div>
+              <div className="panelTitle">👑 PPP (-114 / -114 Props)</div>
             </div>
 
             <div className="panelBody">
               {loadingPPP && <div>Loading…</div>}
+
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No PlayerPartyPicks found.</div>
+                <div>No -114 / -114 props found.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Game</th>
-                      <th>Player</th>
-                      <th>Market</th>
-                      <th>Line</th>
-                      <th>Book</th>
-                      <th>Over</th>
-                      <th>Under</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pppRows.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.game}</td>
-                        <td>{r.player}</td>
-                        <td>{r.market_name}</td>
-                        <td>{r.line}</td>
-                        <td>{r.bookmaker_title}</td>
-                        <td>{r.over_price}</td>
-                        <td>{r.under_price}</td>
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <button
+                      className="pill"
+                      onClick={() => {
+                        const text = pppRows
+                          .map(
+                            (r) =>
+                              `${r.game} | ${r.player} | ${r.market_name} ${r.line} | ${r.bookmaker_title} | O/U -114`
+                          )
+                          .join('\n');
+                        navigator.clipboard.writeText(text);
+                      }}
+                    >
+                      📋 Copy
+                    </button>
+
+                    <button
+                      className="pill"
+                      onClick={() => {
+                        alert(
+                          `PPP Parlay:\n\n${pppRows
+                            .map(
+                              (r) =>
+                                `${r.player} ${r.market_name} ${r.line} (${r.game})`
+                            )
+                            .join('\n')}`
+                        );
+                      }}
+                    >
+                      🧾 Build Parlay
+                    </button>
+                  </div>
+
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Game</th>
+                        <th>Player</th>
+                        <th>Market</th>
+                        <th>Line</th>
+                        <th>Book</th>
+                        <th>Over</th>
+                        <th>Under</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pppRows.map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.game}</td>
+                          <td>{r.player}</td>
+                          <td>{r.market_name}</td>
+                          <td>{r.line}</td>
+                          <td>{r.bookmaker_title}</td>
+                          <td>{r.over_price}</td>
+                          <td>{r.under_price}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </div>
