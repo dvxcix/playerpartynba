@@ -47,19 +47,13 @@ import POR from '@/lib/nbateams/TRAILBLAZERS.png';
 import GSW from '@/lib/nbateams/WARRIORS.png';
 import WAS from '@/lib/nbateams/WIZARDS.png';
 
-/* =========================
-   TEAM LOGO MAP + ALIASES
-   ========================= */
 const TEAM_LOGOS: Record<string, any> = {
   PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
   DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
-
-  // Clippers (ALL accepted forms)
   LAC,
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
 };
-/* ========================= */
 
 type OddsRow = {
   game: string | null;
@@ -106,21 +100,14 @@ function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr)).filter(Boolean) as T[];
 }
 
-/* =========================
-   GAME LOGO RENDERER
-   ========================= */
 function normalizeTeamKey(team: string) {
   return team.toUpperCase().trim();
 }
 
 function GameLogos({ game }: { game: string }) {
   const [awayRaw, homeRaw] = game.split('@');
-
-  const awayKey = normalizeTeamKey(awayRaw);
-  const homeKey = normalizeTeamKey(homeRaw);
-
-  const AwayLogo = TEAM_LOGOS[awayKey];
-  const HomeLogo = TEAM_LOGOS[homeKey];
+  const AwayLogo = TEAM_LOGOS[normalizeTeamKey(awayRaw)];
+  const HomeLogo = TEAM_LOGOS[normalizeTeamKey(homeRaw)];
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -130,18 +117,19 @@ function GameLogos({ game }: { game: string }) {
     </div>
   );
 }
-/* ========================= */
 
 function CheckboxList({
   title,
   options,
   selected,
   setSelected,
+  renderOption,
 }: {
   title: string;
   options: string[];
   selected: Set<string>;
   setSelected: (next: Set<string>) => void;
+  renderOption?: (o: string) => React.ReactNode;
 }) {
   return (
     <div className="panel">
@@ -161,7 +149,7 @@ function CheckboxList({
                 setSelected(next);
               }}
             />
-            <GameLogos game={o} />
+            {renderOption ? renderOption(o) : <span>{o}</span>}
           </label>
         ))}
       </div>
@@ -177,6 +165,7 @@ export default function OddsTable() {
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
   );
+
   const markets = React.useMemo(
     () =>
       uniq(
@@ -189,28 +178,46 @@ export default function OddsTable() {
       ).sort(),
     [rows]
   );
+
   const books = React.useMemo(
     () => uniq(rows.map((r) => r.bookmaker_title ?? 'Unknown')).sort(),
     [rows]
   );
 
+  /* 🔑 NEW: Players list derived from selected games */
+  const players = React.useMemo(() => {
+    if (!games.length || !rows.length || !gameSel.size) return [];
+    return uniq(
+      rows
+        .filter((r) => gameSel.has(r.game ?? 'Unknown'))
+        .map((r) => r.player)
+    ).sort();
+  }, [rows, gameSel]);
+
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
+  const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
 
   const filteredRows = React.useMemo(() => {
     if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
+
     return rows.filter((r) => {
       if (!gameSel.has(r.game ?? 'Unknown')) return false;
+
       const market =
         r.market_name ??
         MARKET_LABELS[r.market_key] ??
         r.market_key;
       if (!marketSel.has(market)) return false;
+
       if (!bookSel.has(r.bookmaker_title ?? 'Unknown')) return false;
+
+      if (playerSel.size && !playerSel.has(r.player)) return false;
+
       return true;
     });
-  }, [rows, gameSel, marketSel, bookSel]);
+  }, [rows, gameSel, marketSel, bookSel, playerSel]);
 
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'line', desc: true },
@@ -264,9 +271,10 @@ export default function OddsTable() {
   return (
     <div>
       <div className="grid2">
-        <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} />
+        <CheckboxList title="Games" options={games} selected={gameSel} setSelected={setGameSel} renderOption={(o) => <GameLogos game={o} />} />
         <CheckboxList title="Markets" options={markets} selected={marketSel} setSelected={setMarketSel} />
         <CheckboxList title="Books" options={books} selected={bookSel} setSelected={setBookSel} />
+        <CheckboxList title="Players" options={players} selected={playerSel} setSelected={setPlayerSel} />
       </div>
 
       <div className="tableWrap">
@@ -297,7 +305,7 @@ export default function OddsTable() {
       </div>
 
       <div className="small" style={{ marginTop: 12 }}>
-        Tip: Clippers logos render correctly whether the game string uses “LAC” or “Los Angeles Clippers”.
+        Tip: Player list updates dynamically based on selected games.
       </div>
     </div>
   );
