@@ -5,6 +5,67 @@ import { useEffect, useState } from 'react';
 import PPicon from '@/lib/PPicon.png';
 import { usePPP } from '@/components/PPPContext';
 
+/* =========================
+   TEAM LOGOS (SAME AS TABLE)
+   ========================= */
+import PHI from '@/lib/nbateams/76ers.png';
+import MIL from '@/lib/nbateams/BUCKS.png';
+import CHI from '@/lib/nbateams/BULLS.png';
+import CLE from '@/lib/nbateams/CAVS.png';
+import BOS from '@/lib/nbateams/CELTICS.png';
+import LAC from '@/lib/nbateams/CLIPPERS.png';
+import MEM from '@/lib/nbateams/GRIZZLIES.png';
+import ATL from '@/lib/nbateams/HAWKS.png';
+import MIA from '@/lib/nbateams/HEAT.gif';
+import CHA from '@/lib/nbateams/HORNETS.png';
+import UTA from '@/lib/nbateams/JAZZ.png';
+import SAC from '@/lib/nbateams/KINGS.png';
+import NYK from '@/lib/nbateams/KNICKS.png';
+import LAL from '@/lib/nbateams/LAKERS.png';
+import ORL from '@/lib/nbateams/MAGIC.png';
+import DAL from '@/lib/nbateams/MAVERICKS.png';
+import BKN from '@/lib/nbateams/NETS.png';
+import DEN from '@/lib/nbateams/NUGGETS.png';
+import IND from '@/lib/nbateams/PACERS.png';
+import NOP from '@/lib/nbateams/PELICANS.png';
+import DET from '@/lib/nbateams/PISTONS.png';
+import TOR from '@/lib/nbateams/RAPTORS.png';
+import HOU from '@/lib/nbateams/ROCKETS.png';
+import SAS from '@/lib/nbateams/SPURS.gif';
+import PHX from '@/lib/nbateams/SUNS.png';
+import OKC from '@/lib/nbateams/THUNDER.png';
+import MIN from '@/lib/nbateams/TIMBERWOLVES.png';
+import POR from '@/lib/nbateams/TRAILBLAZERS.png';
+import GSW from '@/lib/nbateams/WARRIORS.png';
+import WAS from '@/lib/nbateams/WIZARDS.png';
+
+const TEAM_LOGOS: Record<string, any> = {
+  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
+  DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
+  LAC,
+  'LOS ANGELES CLIPPERS': LAC,
+  'LA CLIPPERS': LAC,
+};
+
+function normalizeTeamKey(team: string) {
+  return team.toUpperCase().trim();
+}
+
+function GameLogos({ game }: { game: string }) {
+  const [awayRaw, homeRaw] = game.split('@');
+  const AwayLogo = TEAM_LOGOS[normalizeTeamKey(awayRaw)];
+  const HomeLogo = TEAM_LOGOS[normalizeTeamKey(homeRaw)];
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {AwayLogo && <Image src={AwayLogo} alt={awayRaw} width={22} height={22} />}
+      <span>@</span>
+      {HomeLogo && <Image src={HomeLogo} alt={homeRaw} width={22} height={22} />}
+    </div>
+  );
+}
+/* ========================= */
+
 type PPPRow = {
   game: string;
   player: string;
@@ -143,7 +204,7 @@ export default function ClientHeader() {
                         const text = pppRows
                           .map(
                             (r) =>
-                              `${r.game} | ${r.player} | ${r.market_name} ${r.line} | ${r.bookmaker_title} | O/U -114`
+                              `${r.game} | ${r.player} | ${r.market_name} ${r.line} | ${r.bookmaker_title}`
                           )
                           .join('\n');
                         navigator.clipboard.writeText(text);
@@ -177,20 +238,16 @@ export default function ClientHeader() {
                         <th>Market</th>
                         <th>Line</th>
                         <th>Book</th>
-                        <th>Over</th>
-                        <th>Under</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pppRows.map((r, i) => (
                         <tr key={i}>
-                          <td>{r.game}</td>
+                          <td><GameLogos game={r.game} /></td>
                           <td>{r.player}</td>
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
                           <td>{r.bookmaker_title}</td>
-                          <td>{r.over_price}</td>
-                          <td>{r.under_price}</td>
                         </tr>
                       ))}
                     </tbody>
