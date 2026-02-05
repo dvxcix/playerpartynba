@@ -227,7 +227,7 @@ export default function ClientHeader() {
               style={{ cursor: 'move', userSelect: 'none' }}
               onMouseDown={onMouseDown}
             >
-              <div className="panelTitle">👑 PPP (-114 / -114 Props)</div>
+              <div className="panelTitle">👑 PlayerPartyPicks</div>
             </div>
 
             {/* Close button */}
@@ -250,7 +250,7 @@ export default function ClientHeader() {
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No -114 / -114 props found.</div>
+                <div>No PlayerPartyPicks found.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
