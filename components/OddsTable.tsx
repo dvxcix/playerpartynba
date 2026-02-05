@@ -55,6 +55,8 @@ const TEAM_LOGOS: Record<string, any> = {
   'LA CLIPPERS': LAC,
 };
 
+/* ========================= */
+
 type OddsRow = {
   game: string | null;
   market_key: string;
@@ -161,6 +163,12 @@ export default function OddsTable() {
   const { data } = useSWR<{ rows: OddsRow[] }>('/api/odds/latest', fetcher);
   const rows = data?.rows ?? [];
 
+  /* 🔑 STATE — declared BEFORE useMemo */
+  const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
+  const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
+  const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
+  const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
+
   const games = React.useMemo(
     () => uniq(rows.map((r) => r.game ?? 'Unknown')).sort(),
     [rows]
@@ -184,9 +192,9 @@ export default function OddsTable() {
     [rows]
   );
 
-  /* 🔑 NEW: Players list derived from selected games */
+  /* ✅ FIXED: gameSel now exists before use */
   const players = React.useMemo(() => {
-    if (!games.length || !rows.length || !gameSel.size) return [];
+    if (!gameSel.size) return [];
     return uniq(
       rows
         .filter((r) => gameSel.has(r.game ?? 'Unknown'))
@@ -194,14 +202,8 @@ export default function OddsTable() {
     ).sort();
   }, [rows, gameSel]);
 
-  const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
-  const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
-  const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
-  const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
-
   const filteredRows = React.useMemo(() => {
     if (!gameSel.size || !marketSel.size || !bookSel.size) return [];
-
     return rows.filter((r) => {
       if (!gameSel.has(r.game ?? 'Unknown')) return false;
 
