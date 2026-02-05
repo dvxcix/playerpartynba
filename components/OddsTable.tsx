@@ -14,6 +14,11 @@ import {
 } from '@tanstack/react-table';
 
 /* =========================
+   ✅ ADDITION #1: PPP CONTEXT
+   ========================= */
+import { usePPP } from '@/components/PPPContext';
+
+/* =========================
    TEAM LOGO IMPORTS
    ========================= */
 import PHI from '@/lib/nbateams/76ers.png';
@@ -171,14 +176,17 @@ export default function OddsTable() {
   const { data } = useSWR<{ rows: OddsRow[] }>('/api/odds/latest', fetcher);
   const rows = data?.rows ?? [];
 
-  // ✅ Start with NOTHING selected (UNCHANGED)
+  /* =========================
+     ✅ ADDITION #2: READ PPP KEYS
+     ========================= */
+  const { pppKeys } = usePPP();
+
+  // Start with NOTHING selected (UNCHANGED)
   const [gameSel, setGameSel] = React.useState<Set<string>>(new Set());
   const [marketSel, setMarketSel] = React.useState<Set<string>>(new Set());
   const [bookSel, setBookSel] = React.useState<Set<string>>(new Set());
   const [overSel, setOverSel] = React.useState<Set<string>>(new Set());
   const [underSel, setUnderSel] = React.useState<Set<string>>(new Set());
-
-  // ✅ NEW: players selection (ADDED)
   const [playerSel, setPlayerSel] = React.useState<Set<string>>(new Set());
 
   // Dimension lists (UNCHANGED)
@@ -202,7 +210,6 @@ export default function OddsTable() {
     () => uniq(rows.map((r) => r.bookmaker_title ?? 'Unknown')).sort(),
     [rows]
   );
-
   const overOdds = React.useMemo(
     () =>
       uniq(rows.map((r) => r.over_price).filter((v) => v != null)).sort(
@@ -218,7 +225,6 @@ export default function OddsTable() {
     [rows]
   );
 
-  // ✅ NEW: Players list depends on selected games (ADDED, no behavior changes elsewhere)
   const players = React.useMemo(() => {
     if (!gameSel.size) return [];
     return uniq(
@@ -245,7 +251,6 @@ export default function OddsTable() {
       if (overSel.size && !overSel.has(String(r.over_price))) return false;
       if (underSel.size && !underSel.has(String(r.under_price))) return false;
 
-      // ✅ NEW: Player filter (only when playerSel is non-empty)
       if (playerSel.size && !playerSel.has(r.player)) return false;
 
       return true;
@@ -315,8 +320,6 @@ export default function OddsTable() {
         <CheckboxList title="Books" options={books} selected={bookSel} setSelected={setBookSel} />
         <CheckboxList title="OVER Odds" options={overOdds.map(fmtAmerican)} selected={overSel} setSelected={setOverSel} />
         <CheckboxList title="UNDER Odds" options={underOdds.map(fmtAmerican)} selected={underSel} setSelected={setUnderSel} />
-
-        {/* ✅ NEW: Players panel added AFTER UNDER Odds (next to it in grid flow) */}
         <CheckboxList title="Players" options={players} selected={playerSel} setSelected={setPlayerSel} />
       </div>
 
@@ -335,7 +338,19 @@ export default function OddsTable() {
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
+              /* =========================
+                 ✅ ADDITION #3: PPP HIGHLIGHT
+                 ========================= */
+              <tr
+                key={row.id}
+                className={
+                  pppKeys.has(
+                    `${row.original.game}|${row.original.player}|${row.original.market_name}|${row.original.line}|${row.original.bookmaker_title}`
+                  )
+                    ? 'ppp-highlight'
+                    : ''
+                }
+              >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
