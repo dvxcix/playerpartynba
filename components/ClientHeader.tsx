@@ -270,13 +270,16 @@ export default function ClientHeader() {
             className="panel"
             onClick={e => e.stopPropagation()}
             style={{
-              position: 'absolute',
-              top: position ? position.y : '10%',
-              left: position ? position.x : '10%',
-              minWidth: 520,
-              resize: 'both',
-              overflow: 'auto'
-            }}
+  position: 'absolute',
+  top: position ? position.y : '10%',
+  left: position ? position.x : '10%',
+  minWidth: 520,
+  minHeight: 320,
+  maxWidth: '90vw',
+  maxHeight: '85vh',
+  resize: 'both',
+  overflow: 'hidden'
+}}
           >
 
             <div
