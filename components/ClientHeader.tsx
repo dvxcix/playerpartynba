@@ -66,6 +66,8 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
+/* ========================= */
+
 type PPPRow = {
   game: string;
   player: string;
@@ -107,61 +109,21 @@ export default function ClientHeader() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
+
     const rect = modalRef.current.getBoundingClientRect();
+
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
+
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
 
   /* =========================
-     SPIKE DETECTION
-     ========================= */
-
-  function isSpike(row: any, rows: any[]) {
-
-    if (row.bookmaker_title !== 'FanDuel') return false;
-
-    const allowedMarkets = [
-      'Alt Points',
-      'Alt Rebounds',
-      'Alt Assists',
-      'Alt Threes'
-    ];
-
-    if (!allowedMarkets.includes(row.market_name)) return false;
-
-    const under = Number(row.under_price);
-    const over = Number(row.over_price);
-
-    if (!Number.isFinite(under) || !Number.isFinite(over)) return false;
-
-    /* FanDuel compression band */
-    if (under > -108 || under < -135) return false;
-
-    /* other book disagreement */
-    const others = rows.filter((r: any) =>
-      r.player === row.player &&
-      r.market_name === row.market_name &&
-      r.line === row.line &&
-      r.bookmaker_title !== 'FanDuel'
-    );
-
-    const disagreement = others.some((r: any) => {
-      const otherOver = Number(r.over_price);
-      return Number.isFinite(otherOver) && otherOver > over;
-    });
-
-    if (!disagreement) return false;
-
-    return true;
-  }
-
-  /* =========================
-     LOAD DATA
-     ========================= */
+     FETCH PPP + SPIKE DETECTOR
+  ========================= */
 
   useEffect(() => {
 
@@ -170,25 +132,32 @@ export default function ClientHeader() {
     setLoadingPPP(true);
 
     fetch('/api/odds/latest')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
 
-        const rows = data.rows || [];
+        const rows: PPPRow[] = data.rows ?? [];
 
-        const spikes = rows.filter((r: any) => isSpike(r, rows));
+        const spikes: PPPRow[] = [];
 
-        const sorted = spikes.sort((a: any, b: any) =>
-          a.game.localeCompare(b.game)
-        );
+        for (const r of rows) {
 
-        setPppRows(sorted);
+          if (!r.over_price || !r.under_price) continue;
 
-        setPppCount(sorted.length);
+          const diff = Math.abs(r.over_price + r.under_price);
+
+          if (diff <= 8 && r.bookmaker_title === 'FanDuel') {
+            spikes.push(r);
+          }
+        }
+
+        setPppRows(spikes);
+        setPppCount(spikes.length);
 
         setPppKeys(
           new Set(
-            sorted.map((r: any) =>
-              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
+            spikes.map(
+              (r) =>
+                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
@@ -197,6 +166,8 @@ export default function ClientHeader() {
       .finally(() => setLoadingPPP(false));
 
   }, [showPPP, setPppKeys, setPppCount]);
+
+  /* ========================= */
 
   return (
     <>
@@ -220,39 +191,31 @@ export default function ClientHeader() {
               background: 'linear-gradient(135deg,#f5c542,#d4a017)',
               color: '#000',
               fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
             }}
             onClick={() => setShowPPP(true)}
           >
-            👑 PPP
-            <span
-              style={{
-                background: 'rgba(0,0,0,.15)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                fontWeight: 800,
-              }}
-            >
-              {pppCount}
-            </span>
+            👑 PPP {pppCount}
           </button>
 
-          <a className="pill" href="/api/odds/csv" target="_blank">
+          <a
+            className="pill"
+            href="/api/odds/csv"
+            target="_blank"
+            rel="noreferrer"
+          >
             Export CSV
           </a>
 
         </div>
-
       </header>
 
       {showPPP && (
+
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,.55)',
+            background: 'rgba(0,0,0,0.55)',
             zIndex: 1000,
           }}
           onClick={() => setShowPPP(false)}
@@ -267,54 +230,38 @@ export default function ClientHeader() {
               top: position ? position.y : '10%',
               left: position ? position.x : '10%',
               minWidth: 520,
-              maxWidth: '90vw',
               maxHeight: '85vh',
-              resize: 'both',
               overflow: 'auto',
             }}
           >
 
             <div
               className="panelHeader"
-              style={{ cursor: 'move', userSelect: 'none' }}
+              style={{ cursor: 'move' }}
               onMouseDown={onMouseDown}
             >
-              <div className="panelTitle">👑 PlayerPartyPicks</div>
+              👑 PlayerPartyPicks
             </div>
-
-            <button
-              onClick={() => setShowPPP(false)}
-              style={{
-                position: 'absolute',
-                top: 10,
-                right: 12,
-                fontSize: 18,
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              ✕
-            </button>
 
             <div className="panelBody">
 
-              {loadingPPP && <div>Loading...</div>}
+              {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No PlayerPartyPicks found.</div>
+                <div>No PlayerPartyPicks</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
+
                 <table className="table">
 
                   <thead>
                     <tr>
                       <th>Game</th>
                       <th>Player</th>
-                      <th>Market</th>
+                      <th>Spike Market</th>
                       <th>Line</th>
-                      <th>Book</th>
+                      <th>PPP Play</th>
                     </tr>
                   </thead>
 
@@ -322,27 +269,39 @@ export default function ClientHeader() {
 
                     {pppRows.map((r, i) => {
 
-                      const key =
-                        `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                      let play = '';
+
+                      if (r.market_name.includes('Points')) play = 'Look at Assists / 3PM';
+                      if (r.market_name.includes('Assists')) play = 'Look at Points';
+                      if (r.market_name.includes('Rebounds')) play = 'Look at Points';
+                      if (r.market_name.includes('Threes')) play = 'Look at Points';
+
+                      const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
                       return (
+
                         <tr
                           key={i}
                           style={{ cursor: 'pointer' }}
                           onClick={() => scrollToKey(key)}
                         >
+
                           <td><GameLogos game={r.game} /></td>
                           <td>{r.player}</td>
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
-                          <td>{r.bookmaker_title}</td>
+                          <td>{play}</td>
+
                         </tr>
+
                       );
+
                     })}
 
                   </tbody>
 
                 </table>
+
               )}
 
             </div>
@@ -351,4 +310,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-                  }
+}
