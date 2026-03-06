@@ -66,28 +66,6 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
-/* =========================
-PPP FILTER MODEL
-========================= */
-
-function isValidPPP(row: any) {
-
-  if (row.over_price !== -114 || row.under_price !== -114)
-    return false;
-
-  const market = row.market_name;
-
-  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market))
-    return false;
-
-  if (market === 'Alt Points' && row.line > 45) return false;
-  if (market === 'Alt Rebounds' && row.line > 18) return false;
-  if (market === 'Alt Assists' && row.line > 12) return false;
-  if (market === 'Alt Threes' && row.line > 7) return false;
-
-  return true;
-}
-
 /* ========================= */
 
 type PPPRow = {
@@ -100,16 +78,59 @@ type PPPRow = {
   under_price: number;
 };
 
+/* =========================
+PPP SPIKE LOGIC
+========================= */
+
+function isValidPPP(row: any) {
+  const market = row.market_name;
+  const line = Number(row.line);
+  const under = Number(row.under_price);
+
+  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market)) {
+    return false;
+  }
+
+  if (!Number.isFinite(line) || !Number.isFinite(under)) {
+    return false;
+  }
+
+  /* UNDER compression band */
+  if (under > -112 || under < -120) {
+    return false;
+  }
+
+  /* realistic ranges */
+  if (market === 'Alt Points' && (line < 8 || line > 30)) return false;
+  if (market === 'Alt Rebounds' && (line < 3 || line > 12)) return false;
+  if (market === 'Alt Assists' && (line < 2 || line > 10)) return false;
+  if (market === 'Alt Threes' && (line < 1 || line > 4)) return false;
+
+  return true;
+}
+
+/* ========================= */
+
 export default function ClientHeader() {
 
   const [showPPP, setShowPPP] = useState(false);
   const [pppRows, setPppRows] = useState<PPPRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
 
-  const { setPppKeys, pppCount, setPppCount, scrollToKey } = usePPP();
+  const {
+    setPppKeys,
+    pppCount,
+    setPppCount,
+    scrollToKey,
+  } = usePPP();
+
+  /* =========================
+  DRAG STATE
+  ========================= */
 
   const modalRef = useRef<HTMLDivElement | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
   const onMouseMove = (e: MouseEvent) => {
@@ -125,7 +146,9 @@ export default function ClientHeader() {
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
+
     if (!modalRef.current) return;
+
     const rect = modalRef.current.getBoundingClientRect();
 
     dragOffset.current = {
@@ -138,7 +161,7 @@ export default function ClientHeader() {
   };
 
   /* =========================
-  FETCH PPP DATA
+  FETCH PPP
   ========================= */
 
   useEffect(() => {
@@ -148,12 +171,25 @@ export default function ClientHeader() {
     setLoadingPPP(true);
 
     fetch('/api/odds/latest')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
 
-        const rows = (data.rows || [])
-          .filter(isValidPPP)
-          .sort((a: any, b: any) => a.game.localeCompare(b.game));
+        const filteredRows = (data.rows || []).filter(isValidPPP);
+
+        const dedupedMap = new Map<string, any>();
+
+        for (const r of filteredRows) {
+
+          const key = `${r.game}|${r.player}|${r.market_name}|${r.line}`;
+
+          if (!dedupedMap.has(key)) {
+            dedupedMap.set(key, r);
+          }
+        }
+
+        const rows = Array.from(dedupedMap.values()).sort(
+          (a: any, b: any) => a.game.localeCompare(b.game)
+        );
 
         setPppRows(rows);
         setPppCount(rows.length);
@@ -177,15 +213,20 @@ export default function ClientHeader() {
     <>
       <header className="header">
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
 
           <div>
-            <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
+            <div className="title">
+              NBA Dashboard | PlayerParty (v A3.21)
+            </div>
+
             <div className="subtitle">
               Check all odds for NBA games on Today, updated every 15min.
             </div>
           </div>
+
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -193,7 +234,7 @@ export default function ClientHeader() {
           <button
             className="pill"
             style={{
-              background: 'linear-gradient(135deg,#f5c542,#d4a017)',
+              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
               color: '#000',
               fontWeight: 700,
               display: 'inline-flex',
@@ -214,6 +255,7 @@ export default function ClientHeader() {
             >
               {pppCount}
             </span>
+
           </button>
 
           <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
@@ -221,6 +263,7 @@ export default function ClientHeader() {
           </a>
 
         </div>
+
       </header>
 
       {showPPP && (
@@ -233,6 +276,7 @@ export default function ClientHeader() {
           }}
           onClick={() => setShowPPP(false)}
         >
+
           <div
             ref={modalRef}
             className="panel"
@@ -247,6 +291,7 @@ export default function ClientHeader() {
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
+              cursor: 'default',
             }}
           >
 
@@ -284,6 +329,7 @@ export default function ClientHeader() {
               {!loadingPPP && pppRows.length > 0 && (
 
                 <table className="table">
+
                   <thead>
                     <tr>
                       <th>Game</th>
@@ -295,6 +341,7 @@ export default function ClientHeader() {
                   </thead>
 
                   <tbody>
+
                     {pppRows.map((r, i) => {
 
                       const key =
@@ -306,21 +353,30 @@ export default function ClientHeader() {
                           style={{ cursor: 'pointer' }}
                           onClick={() => scrollToKey(key)}
                         >
-                          <td><GameLogos game={r.game} /></td>
+
+                          <td>
+                            <GameLogos game={r.game} />
+                          </td>
+
                           <td>{r.player}</td>
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
                           <td>{r.bookmaker_title}</td>
+
                         </tr>
                       );
                     })}
+
                   </tbody>
+
                 </table>
 
               )}
 
             </div>
+
           </div>
+
         </div>
       )}
     </>
