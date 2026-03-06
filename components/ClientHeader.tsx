@@ -66,6 +66,28 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
+/* =========================
+PPP FILTER MODEL
+========================= */
+
+function isValidPPP(row: any) {
+
+  if (row.over_price !== -114 || row.under_price !== -114)
+    return false;
+
+  const market = row.market_name;
+
+  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market))
+    return false;
+
+  if (market === 'Alt Points' && row.line > 45) return false;
+  if (market === 'Alt Rebounds' && row.line > 18) return false;
+  if (market === 'Alt Assists' && row.line > 12) return false;
+  if (market === 'Alt Threes' && row.line > 7) return false;
+
+  return true;
+}
+
 /* ========================= */
 
 type PPPRow = {
@@ -79,16 +101,12 @@ type PPPRow = {
 };
 
 export default function ClientHeader() {
+
   const [showPPP, setShowPPP] = useState(false);
-  const [pppRows, setPppRows] = useState<any[]>([]);
+  const [pppRows, setPppRows] = useState<PPPRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
 
-  const {
-    setPppKeys,
-    pppCount,
-    setPppCount,
-    scrollToKey,
-  } = usePPP();
+  const { setPppKeys, pppCount, setPppCount, scrollToKey } = usePPP();
 
   const modalRef = useRef<HTMLDivElement | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -109,60 +127,40 @@ export default function ClientHeader() {
   const onMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
     const rect = modalRef.current.getBoundingClientRect();
+
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
+
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
 
+  /* =========================
+  FETCH PPP DATA
+  ========================= */
+
   useEffect(() => {
+
     if (!showPPP) return;
 
     setLoadingPPP(true);
 
     fetch('/api/odds/latest')
-      .then((r) => r.json())
-      .then((data) => {
+      .then(r => r.json())
+      .then(data => {
 
         const rows = (data.rows || [])
-          .filter((r: any) => {
+          .filter(isValidPPP)
+          .sort((a: any, b: any) => a.game.localeCompare(b.game));
 
-            const over = Number(r.over_price);
-            const under = Number(r.under_price);
-
-            if (!over || !under) return false;
-
-            const overInRange = over <= -105 && over >= -125;
-            const underInRange = under <= -105 && under >= -125;
-
-            return overInRange && underInRange;
-          });
-
-        const enriched = rows.map((r: any) => {
-
-          const spikes = data.rows.filter((x: any) =>
-            x.player === r.player &&
-            x.game === r.game &&
-            x.over_price >= 300
-          );
-
-          const bestSpike = spikes.sort((a: any, b: any) => b.over_price - a.over_price)[0];
-
-          return {
-            ...r,
-            spike: bestSpike
-          };
-
-        });
-
-        setPppRows(enriched);
-        setPppCount(enriched.length);
+        setPppRows(rows);
+        setPppCount(rows.length);
 
         setPppKeys(
           new Set(
-            enriched.map(
+            rows.map(
               (r: any) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
@@ -170,13 +168,18 @@ export default function ClientHeader() {
         );
       })
       .finally(() => setLoadingPPP(false));
+
   }, [showPPP, setPppKeys, setPppCount]);
+
+  /* ========================= */
 
   return (
     <>
       <header className="header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
+
           <div>
             <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
@@ -186,10 +189,11 @@ export default function ClientHeader() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
+
           <button
             className="pill"
             style={{
-              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
+              background: 'linear-gradient(135deg,#f5c542,#d4a017)',
               color: '#000',
               fontWeight: 700,
               display: 'inline-flex',
@@ -199,6 +203,7 @@ export default function ClientHeader() {
             onClick={() => setShowPPP(true)}
           >
             <span>👑 PPP</span>
+
             <span
               style={{
                 background: 'rgba(0,0,0,0.15)',
@@ -214,6 +219,7 @@ export default function ClientHeader() {
           <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
             Export CSV
           </a>
+
         </div>
       </header>
 
@@ -241,9 +247,9 @@ export default function ClientHeader() {
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
-              cursor: 'default',
             }}
           >
+
             <div
               className="panelHeader"
               style={{ cursor: 'move', userSelect: 'none' }}
@@ -268,6 +274,7 @@ export default function ClientHeader() {
             </button>
 
             <div className="panelBody">
+
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
@@ -275,6 +282,7 @@ export default function ClientHeader() {
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
+
                 <table className="table">
                   <thead>
                     <tr>
@@ -283,12 +291,14 @@ export default function ClientHeader() {
                       <th>Market</th>
                       <th>Line</th>
                       <th>Book</th>
-                      <th>🔥 Spike</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {pppRows.map((r, i) => {
-                      const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+
+                      const key =
+                        `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
                       return (
                         <tr
@@ -301,17 +311,14 @@ export default function ClientHeader() {
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
                           <td>{r.bookmaker_title}</td>
-                          <td>
-                            {r.spike
-                              ? `${r.spike.market_name} ${r.spike.line} (+${r.spike.over_price})`
-                              : '—'}
-                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+
               )}
+
             </div>
           </div>
         </div>
