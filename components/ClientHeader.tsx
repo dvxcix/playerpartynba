@@ -41,9 +41,9 @@ import GSW from '@/lib/nbateams/WARRIORS.png';
 import WAS from '@/lib/nbateams/WIZARDS.png';
 
 const TEAM_LOGOS: Record<string, any> = {
-  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
-  DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
-  LAC,
+  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL,
+  ORL, DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC,
+  MIN, POR, GSW, WAS, LAC,
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
 };
@@ -66,6 +66,56 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
+/* =========================
+SPIKE DETECTION
+========================= */
+
+function isRealisticMarket(row: any) {
+  const market = row.market_name;
+  const line = Number(row.line);
+
+  if (market === 'Alt Points' && (line < 10 || line > 32)) return false;
+  if (market === 'Alt Rebounds' && (line < 3 || line > 14)) return false;
+  if (market === 'Alt Assists' && (line < 2 || line > 12)) return false;
+  if (market === 'Alt Threes' && (line < 1 || line > 6)) return false;
+
+  return true;
+}
+
+function isSpike(row: any, rows: any[]) {
+
+  const market = row.market_name;
+  const line = row.line;
+
+  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market)) {
+    return false;
+  }
+
+  if (!isRealisticMarket(row)) return false;
+
+  const under = Number(row.under_price);
+  const over = Number(row.over_price);
+
+  if (!Number.isFinite(under) || !Number.isFinite(over)) return false;
+
+  /* compression band */
+  if (under > -108 || under < -135) return false;
+
+  /* find stronger book */
+  const others = rows.filter(r =>
+    r.player === row.player &&
+    r.market_name === market &&
+    r.line === line &&
+    r.bookmaker_title !== row.bookmaker_title
+  );
+
+  const sharper = others.some(r => Number(r.under_price) < under);
+
+  if (!sharper) return false;
+
+  return true;
+}
+
 /* ========================= */
 
 type PPPRow = {
@@ -77,39 +127,6 @@ type PPPRow = {
   over_price: number;
   under_price: number;
 };
-
-/* =========================
-PPP SPIKE LOGIC
-========================= */
-
-function isValidPPP(row: any) {
-  const market = row.market_name;
-  const line = Number(row.line);
-  const under = Number(row.under_price);
-
-  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market)) {
-    return false;
-  }
-
-  if (!Number.isFinite(line) || !Number.isFinite(under)) {
-    return false;
-  }
-
-  /* UNDER compression band */
-  if (under > -112 || under < -120) {
-    return false;
-  }
-
-  /* realistic ranges */
-  if (market === 'Alt Points' && (line < 8 || line > 30)) return false;
-  if (market === 'Alt Rebounds' && (line < 3 || line > 12)) return false;
-  if (market === 'Alt Assists' && (line < 2 || line > 10)) return false;
-  if (market === 'Alt Threes' && (line < 1 || line > 4)) return false;
-
-  return true;
-}
-
-/* ========================= */
 
 export default function ClientHeader() {
 
@@ -124,13 +141,8 @@ export default function ClientHeader() {
     scrollToKey,
   } = usePPP();
 
-  /* =========================
-  DRAG STATE
-  ========================= */
-
   const modalRef = useRef<HTMLDivElement | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
-
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
   const onMouseMove = (e: MouseEvent) => {
@@ -146,7 +158,6 @@ export default function ClientHeader() {
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
-
     if (!modalRef.current) return;
 
     const rect = modalRef.current.getBoundingClientRect();
@@ -160,10 +171,6 @@ export default function ClientHeader() {
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  /* =========================
-  FETCH PPP
-  ========================= */
-
   useEffect(() => {
 
     if (!showPPP) return;
@@ -174,59 +181,42 @@ export default function ClientHeader() {
       .then((r) => r.json())
       .then((data) => {
 
-        const filteredRows = (data.rows || []).filter(isValidPPP);
+        const rows = data.rows || [];
 
-        const dedupedMap = new Map<string, any>();
+        const spikes = rows.filter((row: any) => isSpike(row, rows));
 
-        for (const r of filteredRows) {
+        spikes.sort((a: any, b: any) => a.game.localeCompare(b.game));
 
-          const key = `${r.game}|${r.player}|${r.market_name}|${r.line}`;
-
-          if (!dedupedMap.has(key)) {
-            dedupedMap.set(key, r);
-          }
-        }
-
-        const rows = Array.from(dedupedMap.values()).sort(
-          (a: any, b: any) => a.game.localeCompare(b.game)
-        );
-
-        setPppRows(rows);
-        setPppCount(rows.length);
+        setPppRows(spikes);
+        setPppCount(spikes.length);
 
         setPppKeys(
           new Set(
-            rows.map(
+            spikes.map(
               (r: any) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
+
       })
       .finally(() => setLoadingPPP(false));
 
   }, [showPPP, setPppKeys, setPppCount]);
 
-  /* ========================= */
-
   return (
     <>
       <header className="header">
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
 
           <div>
-            <div className="title">
-              NBA Dashboard | PlayerParty (v A3.21)
-            </div>
-
+            <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
               Check all odds for NBA games on Today, updated every 15min.
             </div>
           </div>
-
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -234,7 +224,7 @@ export default function ClientHeader() {
           <button
             className="pill"
             style={{
-              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
+              background: 'linear-gradient(135deg,#f5c542,#d4a017)',
               color: '#000',
               fontWeight: 700,
               display: 'inline-flex',
@@ -255,15 +245,13 @@ export default function ClientHeader() {
             >
               {pppCount}
             </span>
-
           </button>
 
-          <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
+          <a className="pill" href="/api/odds/csv" target="_blank">
             Export CSV
           </a>
 
         </div>
-
       </header>
 
       {showPPP && (
@@ -291,13 +279,12 @@ export default function ClientHeader() {
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
-              cursor: 'default',
             }}
           >
 
             <div
               className="panelHeader"
-              style={{ cursor: 'move', userSelect: 'none' }}
+              style={{ cursor: 'move' }}
               onMouseDown={onMouseDown}
             >
               <div className="panelTitle">👑 PlayerPartyPicks</div>
@@ -329,7 +316,6 @@ export default function ClientHeader() {
               {!loadingPPP && pppRows.length > 0 && (
 
                 <table className="table">
-
                   <thead>
                     <tr>
                       <th>Game</th>
@@ -353,22 +339,16 @@ export default function ClientHeader() {
                           style={{ cursor: 'pointer' }}
                           onClick={() => scrollToKey(key)}
                         >
-
-                          <td>
-                            <GameLogos game={r.game} />
-                          </td>
-
+                          <td><GameLogos game={r.game} /></td>
                           <td>{r.player}</td>
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
                           <td>{r.bookmaker_title}</td>
-
                         </tr>
                       );
                     })}
 
                   </tbody>
-
                 </table>
 
               )}
