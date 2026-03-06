@@ -1,132 +1,69 @@
-import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabaseServer';
+import { NextResponse } from 'next/server'
+import { supabaseServer } from '@/lib/supabaseServer'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 1000
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    const CRON_SECRET = process.env.CRON_SECRET;
+    const supabase = supabaseServer()
 
-    // Only enforce auth if CRON_SECRET exists
-    if (CRON_SECRET) {
-      const authHeader = req.headers.get('authorization');
+    let allRows: any[] = []
+    let from = 0
+    let finished = false
 
-      if (authHeader !== `Bearer ${CRON_SECRET}`) {
-        return NextResponse.json(
-          { ok: false, error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
-    }
+    while (!finished) {
+      const to = from + PAGE_SIZE - 1
 
-    const supabase = supabaseServer();
-
-    let allRows: any[] = [];
-    let from = 0;
-    let to = PAGE_SIZE - 1;
-
-    while (true) {
       const { data, error } = await supabase
         .from('odds_lines_current')
         .select('*')
-        .range(from, to);
+        .range(from, to)
 
       if (error) {
         return NextResponse.json(
-          { ok: false, error },
+          { ok: false, error: error.message },
           { status: 500 }
-        );
+        )
       }
 
       if (!data || data.length === 0) {
-        break;
+        finished = true
+        break
       }
 
-      allRows.push(...data);
+      allRows.push(...data)
 
-      // If we got less than a full page, we're done
       if (data.length < PAGE_SIZE) {
-        break;
+        finished = true
+      } else {
+        from += PAGE_SIZE
       }
-
-      from += PAGE_SIZE;
-      to += PAGE_SIZE;
     }
 
     return NextResponse.json(
       {
         ok: true,
         rows: allRows,
-        count: allRows.length,
+        count: allRows.length
       },
       {
         headers: {
-          'cache-control': 'no-store',
-        },
+          'cache-control': 'no-store'
+        }
       }
-    );
-  } catch (err) {
-    console.error('odds/latest route error:', err);
+    )
+  } catch (err: any) {
+    console.error('odds/latest route error:', err)
 
     return NextResponse.json(
-      { ok: false, error: 'Server error' },
+      {
+        ok: false,
+        error: 'Server error'
+      },
       { status: 500 }
-    );
+    )
   }
-}
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error },
-        { status: 500 }
-      );
-    }
-
-    if (!data || data.length === 0) {
-      break;
-    }
-
-    allRows.push(...data);
-
-    if (data.length < PAGE_SIZE) {
-      break;
-    }
-
-    from += PAGE_SIZE;
-    to += PAGE_SIZE;
-  }
-
-  return NextResponse.json(
-    {
-      ok: true,
-      rows: allRows,
-      count: allRows.length,
-    },
-    {
-      headers: {
-        'cache-control': 'no-store',
-      },
-    }
-  );
-}      break;
-    }
-
-    from += PAGE_SIZE;
-    to += PAGE_SIZE;
-  }
-
-  return NextResponse.json(
-    {
-      ok: true,
-      rows: allRows,
-      count: allRows.length,
-    },
-    {
-      headers: {
-        'cache-control': 'no-store',
-      },
-    }
-  );
 }
