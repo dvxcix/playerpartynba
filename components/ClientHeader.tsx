@@ -41,9 +41,9 @@ import GSW from '@/lib/nbateams/WARRIORS.png';
 import WAS from '@/lib/nbateams/WIZARDS.png';
 
 const TEAM_LOGOS: Record<string, any> = {
-  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL,
-  ORL, DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC,
-  MIN, POR, GSW, WAS, LAC,
+  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
+  DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
+  LAC,
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
 };
@@ -65,58 +65,6 @@ function GameLogos({ game }: { game: string }) {
     </div>
   );
 }
-
-/* =========================
-SPIKE DETECTION
-========================= */
-
-function isRealisticMarket(row: any) {
-  const market = row.market_name;
-  const line = Number(row.line);
-
-  if (market === 'Alt Points' && (line < 10 || line > 32)) return false;
-  if (market === 'Alt Rebounds' && (line < 3 || line > 14)) return false;
-  if (market === 'Alt Assists' && (line < 2 || line > 12)) return false;
-  if (market === 'Alt Threes' && (line < 1 || line > 6)) return false;
-
-  return true;
-}
-
-function isSpike(row: any, rows: any[]) {
-
-  const market = row.market_name;
-  const line = row.line;
-
-  if (!['Alt Points','Alt Rebounds','Alt Assists','Alt Threes'].includes(market)) {
-    return false;
-  }
-
-  if (!isRealisticMarket(row)) return false;
-
-  const under = Number(row.under_price);
-  const over = Number(row.over_price);
-
-  if (!Number.isFinite(under) || !Number.isFinite(over)) return false;
-
-  /* compression band */
-  if (under > -108 || under < -135) return false;
-
-  /* find stronger book */
-  const others = rows.filter(r =>
-    r.player === row.player &&
-    r.market_name === market &&
-    r.line === line &&
-    r.bookmaker_title !== row.bookmaker_title
-  );
-
-  const sharper = others.some(r => Number(r.under_price) < under);
-
-  if (!sharper) return false;
-
-  return true;
-}
-
-/* ========================= */
 
 type PPPRow = {
   game: string;
@@ -159,17 +107,61 @@ export default function ClientHeader() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
-
     const rect = modalRef.current.getBoundingClientRect();
-
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
-
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
+
+  /* =========================
+     SPIKE DETECTION
+     ========================= */
+
+  function isSpike(row: any, rows: any[]) {
+
+    if (row.bookmaker_title !== 'FanDuel') return false;
+
+    const allowedMarkets = [
+      'Alt Points',
+      'Alt Rebounds',
+      'Alt Assists',
+      'Alt Threes'
+    ];
+
+    if (!allowedMarkets.includes(row.market_name)) return false;
+
+    const under = Number(row.under_price);
+    const over = Number(row.over_price);
+
+    if (!Number.isFinite(under) || !Number.isFinite(over)) return false;
+
+    /* FanDuel compression band */
+    if (under > -108 || under < -135) return false;
+
+    /* other book disagreement */
+    const others = rows.filter((r: any) =>
+      r.player === row.player &&
+      r.market_name === row.market_name &&
+      r.line === row.line &&
+      r.bookmaker_title !== 'FanDuel'
+    );
+
+    const disagreement = others.some((r: any) => {
+      const otherOver = Number(r.over_price);
+      return Number.isFinite(otherOver) && otherOver > over;
+    });
+
+    if (!disagreement) return false;
+
+    return true;
+  }
+
+  /* =========================
+     LOAD DATA
+     ========================= */
 
   useEffect(() => {
 
@@ -178,23 +170,25 @@ export default function ClientHeader() {
     setLoadingPPP(true);
 
     fetch('/api/odds/latest')
-      .then((r) => r.json())
-      .then((data) => {
+      .then(r => r.json())
+      .then(data => {
 
         const rows = data.rows || [];
 
-        const spikes = rows.filter((row: any) => isSpike(row, rows));
+        const spikes = rows.filter((r: any) => isSpike(r, rows));
 
-        spikes.sort((a: any, b: any) => a.game.localeCompare(b.game));
+        const sorted = spikes.sort((a: any, b: any) =>
+          a.game.localeCompare(b.game)
+        );
 
-        setPppRows(spikes);
-        setPppCount(spikes.length);
+        setPppRows(sorted);
+
+        setPppCount(sorted.length);
 
         setPppKeys(
           new Set(
-            spikes.map(
-              (r: any) =>
-                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
+            sorted.map((r: any) =>
+              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
@@ -210,7 +204,6 @@ export default function ClientHeader() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
-
           <div>
             <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
@@ -233,11 +226,10 @@ export default function ClientHeader() {
             }}
             onClick={() => setShowPPP(true)}
           >
-            <span>👑 PPP</span>
-
+            👑 PPP
             <span
               style={{
-                background: 'rgba(0,0,0,0.15)',
+                background: 'rgba(0,0,0,.15)',
                 padding: '2px 8px',
                 borderRadius: 999,
                 fontWeight: 800,
@@ -252,6 +244,7 @@ export default function ClientHeader() {
           </a>
 
         </div>
+
       </header>
 
       {showPPP && (
@@ -259,7 +252,7 @@ export default function ClientHeader() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.55)',
+            background: 'rgba(0,0,0,.55)',
             zIndex: 1000,
           }}
           onClick={() => setShowPPP(false)}
@@ -274,7 +267,6 @@ export default function ClientHeader() {
               top: position ? position.y : '10%',
               left: position ? position.x : '10%',
               minWidth: 520,
-              minHeight: 320,
               maxWidth: '90vw',
               maxHeight: '85vh',
               resize: 'both',
@@ -284,7 +276,7 @@ export default function ClientHeader() {
 
             <div
               className="panelHeader"
-              style={{ cursor: 'move' }}
+              style={{ cursor: 'move', userSelect: 'none' }}
               onMouseDown={onMouseDown}
             >
               <div className="panelTitle">👑 PlayerPartyPicks</div>
@@ -307,15 +299,15 @@ export default function ClientHeader() {
 
             <div className="panelBody">
 
-              {loadingPPP && <div>Loading…</div>}
+              {loadingPPP && <div>Loading...</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
                 <div>No PlayerPartyPicks found.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-
                 <table className="table">
+
                   <thead>
                     <tr>
                       <th>Game</th>
@@ -349,16 +341,14 @@ export default function ClientHeader() {
                     })}
 
                   </tbody>
-                </table>
 
+                </table>
               )}
 
             </div>
-
           </div>
-
         </div>
       )}
     </>
   );
-}
+                  }
