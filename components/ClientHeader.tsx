@@ -66,34 +66,217 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
+/* =========================
+TYPES
+========================= */
+
 type PPPRow = {
   game: string;
   player: string;
   market_name: string;
   line: number;
   bookmaker_title: string;
-  over_price: number;
+  over_price: number | null;
+  under_price?: number | null;
+};
+
+type PPPPick = {
+  game: string;
+  player: string;
+  spikeMarket: string;
+  spikeLine: number;
+  spikePrice: number | null;
+  spikeKey: string;
+  suggestedPlay: string;
+  suggestedPrice: number | null;
+  suggestedKey: string;
 };
 
 /* =========================
-PROP SUGGESTION ENGINE
+HELPERS
 ========================= */
 
-function suggestProp(row: PPPRow) {
-  const m = row.market_name.toLowerCase();
-
-  if (m.includes('points')) return 'Check Threes or Assists';
-  if (m.includes('rebounds')) return 'Check Double-Double';
-  if (m.includes('assists')) return 'Check Points';
-  if (m.includes('threes')) return 'Check Points';
-
-  return 'Check Alt Lines';
+function rowKey(r: PPPRow) {
+  return `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 }
 
-export default function ClientHeader() {
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
 
+function isFanDuel(r: PPPRow) {
+  return r.bookmaker_title === 'FanDuel';
+}
+
+function isAllowedSpikeMarket(market: string) {
+  return ['Alt Points', 'Alt Rebounds', 'Alt Assists', 'Alt Threes'].includes(market);
+}
+
+function isSpikeRow(r: PPPRow) {
+  if (!isFanDuel(r)) return false;
+  if (!isAllowedSpikeMarket(r.market_name)) return false;
+  if (!isFiniteNumber(r.over_price)) return false;
+
+  return r.over_price >= -118 && r.over_price <= -110;
+}
+
+function marketShort(market: string) {
+  if (market === 'Alt Points') return 'PTS';
+  if (market === 'Alt Rebounds') return 'REB';
+  if (market === 'Alt Assists') return 'AST';
+  if (market === 'Alt Threes') return '3PM';
+  return market;
+}
+
+function displayAltLine(line: number) {
+  return `${Math.ceil(line)}+`;
+}
+
+function preferredTargetMarkets(spikeMarket: string) {
+  if (spikeMarket === 'Alt Points') return ['Alt Assists', 'Alt Threes', 'Alt Rebounds'];
+  if (spikeMarket === 'Alt Assists') return ['Alt Points', 'Alt Threes'];
+  if (spikeMarket === 'Alt Rebounds') return ['Alt Points', 'Alt Threes'];
+  if (spikeMarket === 'Alt Threes') return ['Alt Points', 'Alt Assists'];
+  return [];
+}
+
+function realisticTargetBand(targetMarket: string) {
+  if (targetMarket === 'Alt Assists') return { min: +100, max: +220, ideal: +140 };
+  if (targetMarket === 'Alt Threes') return { min: +100, max: +230, ideal: +145 };
+  if (targetMarket === 'Alt Points') return { min: +100, max: +240, ideal: +150 };
+  if (targetMarket === 'Alt Rebounds') return { min: +100, max: +220, ideal: +140 };
+  return { min: +100, max: +250, ideal: +145 };
+}
+
+function fallbackBand(targetMarket: string) {
+  if (targetMarket === 'Alt Assists') return { min: -105, max: +320, ideal: +140 };
+  if (targetMarket === 'Alt Threes') return { min: -105, max: +320, ideal: +145 };
+  if (targetMarket === 'Alt Points') return { min: -105, max: +350, ideal: +150 };
+  if (targetMarket === 'Alt Rebounds') return { min: -105, max: +300, ideal: +140 };
+  return { min: -105, max: +350, ideal: +145 };
+}
+
+function chooseBestTarget(rows: PPPRow[], targetMarket: string): PPPRow | null {
+  const band = realisticTargetBand(targetMarket);
+  const fallback = fallbackBand(targetMarket);
+
+  const candidates = rows.filter(
+    (r) =>
+      isFanDuel(r) &&
+      r.market_name === targetMarket &&
+      isFiniteNumber(r.over_price)
+  );
+
+  if (candidates.length === 0) return null;
+
+  const inBand = candidates
+    .filter((r) => isFiniteNumber(r.over_price) && r.over_price >= band.min && r.over_price <= band.max)
+    .sort((a, b) => {
+      const aDiff = Math.abs((a.over_price as number) - band.ideal);
+      const bDiff = Math.abs((b.over_price as number) - band.ideal);
+      if (aDiff !== bDiff) return aDiff - bDiff;
+      return a.line - b.line;
+    });
+
+  if (inBand.length > 0) return inBand[0];
+
+  const inFallback = candidates
+    .filter(
+      (r) =>
+        isFiniteNumber(r.over_price) &&
+        r.over_price >= fallback.min &&
+        r.over_price <= fallback.max
+    )
+    .sort((a, b) => {
+      const aDiff = Math.abs((a.over_price as number) - fallback.ideal);
+      const bDiff = Math.abs((b.over_price as number) - fallback.ideal);
+      if (aDiff !== bDiff) return aDiff - bDiff;
+      return a.line - b.line;
+    });
+
+  return inFallback[0] ?? null;
+}
+
+function chooseBestSpike(rows: PPPRow[]): PPPRow | null {
+  const spikes = rows.filter(isSpikeRow);
+
+  if (spikes.length === 0) return null;
+
+  const marketPriority: Record<string, number> = {
+    'Alt Points': 1,
+    'Alt Assists': 2,
+    'Alt Rebounds': 3,
+    'Alt Threes': 4,
+  };
+
+  return [...spikes].sort((a, b) => {
+    const aDiff = Math.abs((a.over_price as number) - -114);
+    const bDiff = Math.abs((b.over_price as number) - -114);
+    if (aDiff !== bDiff) return aDiff - bDiff;
+
+    const aPriority = marketPriority[a.market_name] ?? 99;
+    const bPriority = marketPriority[b.market_name] ?? 99;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+
+    return a.line - b.line;
+  })[0];
+}
+
+function buildSuggestedText(target: PPPRow | null) {
+  if (!target) return 'No correlated alt found';
+  return `${displayAltLine(target.line)} ${marketShort(target.market_name)}`;
+}
+
+function buildPPPPicks(rows: PPPRow[]): PPPPick[] {
+  const fanDuelRows = rows.filter(isFanDuel);
+
+  const groups = new Map<string, PPPRow[]>();
+
+  for (const row of fanDuelRows) {
+    const key = `${row.game}|${row.player}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+
+  const picks: PPPPick[] = [];
+
+  for (const [groupKey, playerRows] of groups.entries()) {
+    const spike = chooseBestSpike(playerRows);
+    if (!spike) continue;
+
+    const targetMarkets = preferredTargetMarkets(spike.market_name);
+
+    let target: PPPRow | null = null;
+    for (const targetMarket of targetMarkets) {
+      target = chooseBestTarget(playerRows, targetMarket);
+      if (target) break;
+    }
+
+    const [game, player] = groupKey.split('|');
+
+    picks.push({
+      game,
+      player,
+      spikeMarket: spike.market_name,
+      spikeLine: spike.line,
+      spikePrice: spike.over_price ?? null,
+      spikeKey: rowKey(spike),
+      suggestedPlay: buildSuggestedText(target),
+      suggestedPrice: target?.over_price ?? null,
+      suggestedKey: target ? rowKey(target) : rowKey(spike),
+    });
+  }
+
+  return picks.sort((a, b) => a.game.localeCompare(b.game));
+}
+
+/* =========================
+COMPONENT
+========================= */
+
+export default function ClientHeader() {
   const [showPPP, setShowPPP] = useState(false);
-  const [pppRows, setPppRows] = useState<PPPRow[]>([]);
+  const [pppRows, setPppRows] = useState<PPPPick[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
 
   const {
@@ -104,7 +287,6 @@ export default function ClientHeader() {
   } = usePPP();
 
   const modalRef = useRef<HTMLDivElement | null>(null);
-
   const dragOffset = useRef({ x: 0, y: 0 });
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -116,210 +298,4 @@ export default function ClientHeader() {
   };
 
   const onMouseUp = () => {
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  };
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (!modalRef.current) return;
-
-    const rect = modalRef.current.getBoundingClientRect();
-
-    dragOffset.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
-
-  /* =========================
-FETCH PPP
-========================= */
-
-  useEffect(() => {
-    if (!showPPP) return;
-
-    setLoadingPPP(true);
-
-    fetch('/api/odds/latest')
-      .then((r) => r.json())
-      .then((data) => {
-
-        const rows = (data.rows || [])
-          .filter((r: any) =>
-            r.bookmaker_title === 'FanDuel' &&
-            r.over_price >= -118 &&
-            r.over_price <= -110
-          )
-          .sort((a: any, b: any) => a.game.localeCompare(b.game));
-
-        setPppRows(rows);
-        setPppCount(rows.length);
-
-        setPppKeys(
-          new Set(
-            rows.map(
-              (r: any) =>
-                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
-            )
-          )
-        );
-
-      })
-      .finally(() => setLoadingPPP(false));
-
-  }, [showPPP, setPppKeys, setPppCount]);
-
-  return (
-    <>
-      <header className="header">
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
-
-          <div>
-            <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
-            <div className="subtitle">
-              Check all odds for NBA games on Today, updated every 15min.
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10 }}>
-
-          <button
-            className="pill"
-            style={{
-              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
-              color: '#000',
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-            onClick={() => setShowPPP(true)}
-          >
-            <span>👑 PPP</span>
-
-            <span
-              style={{
-                background: 'rgba(0,0,0,0.15)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                fontWeight: 800,
-              }}
-            >
-              {pppCount}
-            </span>
-          </button>
-
-          <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
-            Export CSV
-          </a>
-
-        </div>
-      </header>
-
-      {showPPP && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: 1000,
-          }}
-          onClick={() => setShowPPP(false)}
-        >
-          <div
-            ref={modalRef}
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              top: position ? position.y : '10%',
-              left: position ? position.x : '10%',
-              minWidth: 520,
-              minHeight: 320,
-              maxWidth: '90vw',
-              maxHeight: '85vh',
-              resize: 'both',
-              overflow: 'auto',
-            }}
-          >
-
-            <div
-              className="panelHeader"
-              style={{ cursor: 'move', userSelect: 'none' }}
-              onMouseDown={onMouseDown}
-            >
-              <div className="panelTitle">👑 PlayerPartyPicks</div>
-            </div>
-
-            <button
-              onClick={() => setShowPPP(false)}
-              style={{
-                position: 'absolute',
-                top: 10,
-                right: 12,
-                fontSize: 18,
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              ✕
-            </button>
-
-            <div className="panelBody">
-
-              {loadingPPP && <div>Loading…</div>}
-
-              {!loadingPPP && pppRows.length === 0 && (
-                <div>No PlayerPartyPicks found.</div>
-              )}
-
-              {!loadingPPP && pppRows.length > 0 && (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Game</th>
-                      <th>Player</th>
-                      <th>Spike Market</th>
-                      <th>Line</th>
-                      <th>Suggested Play</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {pppRows.map((r, i) => {
-
-                      const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
-
-                      return (
-                        <tr
-                          key={i}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => scrollToKey(key)}
-                        >
-                          <td><GameLogos game={r.game} /></td>
-                          <td>{r.player}</td>
-                          <td>{r.market_name}</td>
-                          <td>{r.line}</td>
-                          <td>{suggestProp(r)}</td>
-                        </tr>
-                      );
-
-                    })}
-                  </tbody>
-                </table>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+    window.removeEventListener('mousemove', onMouse
