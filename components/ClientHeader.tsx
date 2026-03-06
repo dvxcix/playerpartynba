@@ -6,8 +6,8 @@ import PPicon from '@/lib/PPicon.png';
 import { usePPP } from '@/components/PPPContext';
 
 /* =========================
-   TEAM LOGOS (SAME AS TABLE)
-   ========================= */
+TEAM LOGOS
+========================= */
 
 import PHI from '@/lib/nbateams/76ers.png';
 import MIL from '@/lib/nbateams/BUCKS.png';
@@ -67,10 +67,8 @@ function GameLogos({ game }: { game: string }) {
 }
 
 /* ========================= */
-/* FIXED TYPE → INTERFACE    */
-/* ========================= */
 
-interface PPPRow {
+type PPPRow = {
   game: string;
   player: string;
   market_name: string;
@@ -78,11 +76,11 @@ interface PPPRow {
   bookmaker_title: string;
   over_price: number;
   under_price: number;
-}
+};
 
 export default function ClientHeader() {
   const [showPPP, setShowPPP] = useState(false);
-  const [pppRows, setPppRows] = useState<PPPRow[]>([]);
+  const [pppRows, setPppRows] = useState<any[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
 
   const {
@@ -91,10 +89,6 @@ export default function ClientHeader() {
     setPppCount,
     scrollToKey,
   } = usePPP();
-
-  /* =========================
-     DRAG STATE
-     ========================= */
 
   const modalRef = useRef<HTMLDivElement | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -114,21 +108,14 @@ export default function ClientHeader() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
-
     const rect = modalRef.current.getBoundingClientRect();
-
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
-
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
-
-  /* =========================
-     FETCH PPP DATA
-     ========================= */
 
   useEffect(() => {
     if (!showPPP) return;
@@ -140,37 +127,58 @@ export default function ClientHeader() {
       .then((data) => {
 
         const rows = (data.rows || [])
-          .filter((r: PPPRow) => r.over_price === -114 && r.under_price === -114)
-          .sort((a: PPPRow, b: PPPRow) => a.game.localeCompare(b.game));
+          .filter((r: any) => {
 
-        setPppRows(rows);
-        setPppCount(rows.length);
+            const over = Number(r.over_price);
+            const under = Number(r.under_price);
+
+            if (!over || !under) return false;
+
+            const overInRange = over <= -105 && over >= -125;
+            const underInRange = under <= -105 && under >= -125;
+
+            return overInRange && underInRange;
+          });
+
+        const enriched = rows.map((r: any) => {
+
+          const spikes = data.rows.filter((x: any) =>
+            x.player === r.player &&
+            x.game === r.game &&
+            x.over_price >= 300
+          );
+
+          const bestSpike = spikes.sort((a: any, b: any) => b.over_price - a.over_price)[0];
+
+          return {
+            ...r,
+            spike: bestSpike
+          };
+
+        });
+
+        setPppRows(enriched);
+        setPppCount(enriched.length);
 
         setPppKeys(
           new Set(
-            rows.map(
-              (r: PPPRow) =>
+            enriched.map(
+              (r: any) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
       })
       .finally(() => setLoadingPPP(false));
-
   }, [showPPP, setPppKeys, setPppCount]);
 
   return (
     <>
       <header className="header">
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
-
           <div>
-            <div className="title">
-              NBA Dashboard | PlayerParty (v A3.21)
-            </div>
-
+            <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
               Check all odds for NBA games on Today, updated every 15min.
             </div>
@@ -178,9 +186,6 @@ export default function ClientHeader() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-
-          {/* PPP BUTTON */}
-
           <button
             className="pill"
             style={{
@@ -194,7 +199,6 @@ export default function ClientHeader() {
             onClick={() => setShowPPP(true)}
           >
             <span>👑 PPP</span>
-
             <span
               style={{
                 background: 'rgba(0,0,0,0.15)',
@@ -207,21 +211,11 @@ export default function ClientHeader() {
             </span>
           </button>
 
-          {/* CSV */}
-
-          <a
-            className="pill"
-            href="/api/odds/csv"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
             Export CSV
           </a>
-
         </div>
       </header>
-
-      {/* PPP MODAL */}
 
       {showPPP && (
         <div
@@ -233,7 +227,6 @@ export default function ClientHeader() {
           }}
           onClick={() => setShowPPP(false)}
         >
-
           <div
             ref={modalRef}
             className="panel"
@@ -248,17 +241,15 @@ export default function ClientHeader() {
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
+              cursor: 'default',
             }}
           >
-
             <div
               className="panelHeader"
               style={{ cursor: 'move', userSelect: 'none' }}
               onMouseDown={onMouseDown}
             >
-              <div className="panelTitle">
-                👑 PlayerPartyPicks
-              </div>
+              <div className="panelTitle">👑 PlayerPartyPicks</div>
             </div>
 
             <button
@@ -277,7 +268,6 @@ export default function ClientHeader() {
             </button>
 
             <div className="panelBody">
-
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
@@ -285,46 +275,43 @@ export default function ClientHeader() {
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Game</th>
+                      <th>Player</th>
+                      <th>Market</th>
+                      <th>Line</th>
+                      <th>Book</th>
+                      <th>🔥 Spike</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pppRows.map((r, i) => {
+                      const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
-                <>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Game</th>
-                        <th>Player</th>
-                        <th>Market</th>
-                        <th>Line</th>
-                        <th>Book</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-
-                      {pppRows.map((r, i) => {
-
-                        const key =
-                          `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
-
-                        return (
-                          <tr
-                            key={i}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => scrollToKey(key)}
-                          >
-                            <td><GameLogos game={r.game} /></td>
-                            <td>{r.player}</td>
-                            <td>{r.market_name}</td>
-                            <td>{r.line}</td>
-                            <td>{r.bookmaker_title}</td>
-                          </tr>
-                        );
-                      })}
-
-                    </tbody>
-                  </table>
-                </>
+                      return (
+                        <tr
+                          key={i}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => scrollToKey(key)}
+                        >
+                          <td><GameLogos game={r.game} /></td>
+                          <td>{r.player}</td>
+                          <td>{r.market_name}</td>
+                          <td>{r.line}</td>
+                          <td>{r.bookmaker_title}</td>
+                          <td>
+                            {r.spike
+                              ? `${r.spike.market_name} ${r.spike.line} (+${r.spike.over_price})`
+                              : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
-
             </div>
           </div>
         </div>
