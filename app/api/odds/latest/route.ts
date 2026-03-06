@@ -7,6 +7,21 @@ export const dynamic = 'force-dynamic';
 const PAGE_SIZE = 1000;
 
 export async function GET(req: Request) {
+
+  const CRON_SECRET = process.env.CRON_SECRET;
+
+  // Only enforce cron secret if it exists
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+
+    if (authHeader !== `Bearer ${CRON_SECRET}`) {
+      return NextResponse.json(
+        { ok: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+  }
+
   const supabase = supabaseServer();
 
   let allRows: any[] = [];
@@ -14,6 +29,7 @@ export async function GET(req: Request) {
   let to = PAGE_SIZE - 1;
 
   while (true) {
+
     const { data, error } = await supabase
       .from('odds_lines_current')
       .select('*')
@@ -32,9 +48,27 @@ export async function GET(req: Request) {
 
     allRows.push(...data);
 
-    // If we got less than a full page, we’re done
     if (data.length < PAGE_SIZE) {
       break;
+    }
+
+    from += PAGE_SIZE;
+    to += PAGE_SIZE;
+  }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      rows: allRows,
+      count: allRows.length,
+    },
+    {
+      headers: {
+        'cache-control': 'no-store',
+      },
+    }
+  );
+}      break;
     }
 
     from += PAGE_SIZE;
