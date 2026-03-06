@@ -78,15 +78,21 @@ const TEAM_ABBR: Record<string, string> = {
 
 async function fetchJson(url: string) {
   const res = await fetch(url);
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`OddsAPI ${res.status}: ${text}`);
   }
+
   return res.json();
 }
 
+/* =========================
+   POST = CRON INGESTION
+   ========================= */
 export async function POST(req: Request) {
   const auth = req.headers.get('authorization');
+
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
@@ -195,11 +201,12 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, rows: rows.length });
 }
 
-/* GET = manual test */
+/* =========================
+   GET = SAFE BUILD HANDLER
+   ========================= */
 export async function GET() {
-  return POST(
-    new Request('http://localhost', {
-      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-    })
-  );
-}
+  return NextResponse.json({
+    ok: true,
+    message: 'Odds ingestion endpoint ready',
+  });
+    }
