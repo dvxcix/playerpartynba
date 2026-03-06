@@ -66,8 +66,6 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
-/* ========================= */
-
 type PPPRow = {
   game: string;
   player: string;
@@ -75,8 +73,22 @@ type PPPRow = {
   line: number;
   bookmaker_title: string;
   over_price: number;
-  under_price: number;
 };
+
+/* =========================
+PROP SUGGESTION ENGINE
+========================= */
+
+function suggestProp(row: PPPRow) {
+  const m = row.market_name.toLowerCase();
+
+  if (m.includes('points')) return 'Check Threes or Assists';
+  if (m.includes('rebounds')) return 'Check Double-Double';
+  if (m.includes('assists')) return 'Check Points';
+  if (m.includes('threes')) return 'Check Points';
+
+  return 'Check Alt Lines';
+}
 
 export default function ClientHeader() {
 
@@ -92,6 +104,7 @@ export default function ClientHeader() {
   } = usePPP();
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+
   const dragOffset = useRef({ x: 0, y: 0 });
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -122,11 +135,10 @@ export default function ClientHeader() {
   };
 
   /* =========================
-     FETCH PPP + SPIKE DETECTOR
-  ========================= */
+FETCH PPP
+========================= */
 
   useEffect(() => {
-
     if (!showPPP) return;
 
     setLoadingPPP(true);
@@ -135,28 +147,21 @@ export default function ClientHeader() {
       .then((r) => r.json())
       .then((data) => {
 
-        const rows: PPPRow[] = data.rows ?? [];
+        const rows = (data.rows || [])
+          .filter((r: any) =>
+            r.bookmaker_title === 'FanDuel' &&
+            r.over_price >= -118 &&
+            r.over_price <= -110
+          )
+          .sort((a: any, b: any) => a.game.localeCompare(b.game));
 
-        const spikes: PPPRow[] = [];
-
-        for (const r of rows) {
-
-          if (!r.over_price || !r.under_price) continue;
-
-          const diff = Math.abs(r.over_price + r.under_price);
-
-          if (diff <= 8 && r.bookmaker_title === 'FanDuel') {
-            spikes.push(r);
-          }
-        }
-
-        setPppRows(spikes);
-        setPppCount(spikes.length);
+        setPppRows(rows);
+        setPppCount(rows.length);
 
         setPppKeys(
           new Set(
-            spikes.map(
-              (r) =>
+            rows.map(
+              (r: any) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
@@ -167,14 +172,13 @@ export default function ClientHeader() {
 
   }, [showPPP, setPppKeys, setPppCount]);
 
-  /* ========================= */
-
   return (
     <>
       <header className="header">
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
+
           <div>
             <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
@@ -188,21 +192,30 @@ export default function ClientHeader() {
           <button
             className="pill"
             style={{
-              background: 'linear-gradient(135deg,#f5c542,#d4a017)',
+              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
               color: '#000',
               fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
             }}
             onClick={() => setShowPPP(true)}
           >
-            👑 PPP {pppCount}
+            <span>👑 PPP</span>
+
+            <span
+              style={{
+                background: 'rgba(0,0,0,0.15)',
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontWeight: 800,
+              }}
+            >
+              {pppCount}
+            </span>
           </button>
 
-          <a
-            className="pill"
-            href="/api/odds/csv"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
             Export CSV
           </a>
 
@@ -210,7 +223,6 @@ export default function ClientHeader() {
       </header>
 
       {showPPP && (
-
         <div
           style={{
             position: 'fixed',
@@ -220,7 +232,6 @@ export default function ClientHeader() {
           }}
           onClick={() => setShowPPP(false)}
         >
-
           <div
             ref={modalRef}
             className="panel"
@@ -230,78 +241,79 @@ export default function ClientHeader() {
               top: position ? position.y : '10%',
               left: position ? position.x : '10%',
               minWidth: 520,
+              minHeight: 320,
+              maxWidth: '90vw',
               maxHeight: '85vh',
+              resize: 'both',
               overflow: 'auto',
             }}
           >
 
             <div
               className="panelHeader"
-              style={{ cursor: 'move' }}
+              style={{ cursor: 'move', userSelect: 'none' }}
               onMouseDown={onMouseDown}
             >
-              👑 PlayerPartyPicks
+              <div className="panelTitle">👑 PlayerPartyPicks</div>
             </div>
+
+            <button
+              onClick={() => setShowPPP(false)}
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 12,
+                fontSize: 18,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
 
             <div className="panelBody">
 
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No PlayerPartyPicks</div>
+                <div>No PlayerPartyPicks found.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-
                 <table className="table">
-
                   <thead>
                     <tr>
                       <th>Game</th>
                       <th>Player</th>
                       <th>Spike Market</th>
                       <th>Line</th>
-                      <th>PPP Play</th>
+                      <th>Suggested Play</th>
                     </tr>
                   </thead>
 
                   <tbody>
-
                     {pppRows.map((r, i) => {
-
-                      let play = '';
-
-                      if (r.market_name.includes('Points')) play = 'Look at Assists / 3PM';
-                      if (r.market_name.includes('Assists')) play = 'Look at Points';
-                      if (r.market_name.includes('Rebounds')) play = 'Look at Points';
-                      if (r.market_name.includes('Threes')) play = 'Look at Points';
 
                       const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
                       return (
-
                         <tr
                           key={i}
                           style={{ cursor: 'pointer' }}
                           onClick={() => scrollToKey(key)}
                         >
-
                           <td><GameLogos game={r.game} /></td>
                           <td>{r.player}</td>
                           <td>{r.market_name}</td>
                           <td>{r.line}</td>
-                          <td>{play}</td>
-
+                          <td>{suggestProp(r)}</td>
                         </tr>
-
                       );
 
                     })}
-
                   </tbody>
-
                 </table>
-
               )}
 
             </div>
