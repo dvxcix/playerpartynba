@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PPicon from '@/lib/PPicon.png';
 import { usePPP } from '@/components/PPPContext';
 
@@ -41,8 +41,35 @@ import GSW from '@/lib/nbateams/WARRIORS.png';
 import WAS from '@/lib/nbateams/WIZARDS.png';
 
 const TEAM_LOGOS: Record<string, any> = {
-  PHI, MIL, CHI, CLE, BOS, MEM, ATL, MIA, CHA, UTA, SAC, NYK, LAL, ORL,
-  DAL, BKN, DEN, IND, NOP, DET, TOR, HOU, SAS, PHX, OKC, MIN, POR, GSW, WAS,
+  PHI,
+  MIL,
+  CHI,
+  CLE,
+  BOS,
+  MEM,
+  ATL,
+  MIA,
+  CHA,
+  UTA,
+  SAC,
+  NYK,
+  LAL,
+  ORL,
+  DAL,
+  BKN,
+  DEN,
+  IND,
+  NOP,
+  DET,
+  TOR,
+  HOU,
+  SAS,
+  PHX,
+  OKC,
+  MIN,
+  POR,
+  GSW,
+  WAS,
   LAC,
   'LOS ANGELES CLIPPERS': LAC,
   'LA CLIPPERS': LAC,
@@ -66,21 +93,251 @@ function GameLogos({ game }: { game: string }) {
   );
 }
 
-/* ========================= */
+/* =========================
+TYPES
+========================= */
 
-type PPPRow = {
+type OddsRow = {
   game: string;
   player: string;
   market_name: string;
   line: number;
   bookmaker_title: string;
-  over_price: number;
-  under_price: number;
+  over_price: number | null;
+  under_price?: number | null;
 };
+
+type PPPPick = {
+  game: string;
+  player: string;
+  signalMarket: string;
+  signalLines: string;
+  strength: 'Spike' | 'Super Spike' | 'Nuclear Spike';
+  suggestion: string;
+  suggestionOdds: number | null;
+  signalKey: string;
+  suggestionKey: string;
+};
+
+/* =========================
+HELPERS
+========================= */
+
+const SIGNAL_MIN = -130;
+const SIGNAL_MAX = -105;
+
+const ALLOWED_SIGNAL_MARKETS = new Set([
+  'Alt Points',
+  'Alt Rebounds',
+  'Alt Assists',
+  'Alt Threes',
+]);
+
+function toNum(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function rowKey(row: OddsRow) {
+  return `${row.game}|${row.player}|${row.market_name}|${row.line}|${row.bookmaker_title}`;
+}
+
+function formatOdds(price: number | null) {
+  if (price == null) return '—';
+  return price > 0 ? `+${price}` : `${price}`;
+}
+
+function formatSuggestedLine(row: OddsRow | null) {
+  if (!row) return 'No correlated alt found';
+
+  const label =
+    row.market_name === 'Alt Points'
+      ? 'PTS'
+      : row.market_name === 'Alt Rebounds'
+        ? 'REB'
+        : row.market_name === 'Alt Assists'
+          ? 'AST'
+          : row.market_name === 'Alt Threes'
+            ? '3PM'
+            : row.market_name.replace('Alt ', '');
+
+  return `${Math.ceil(row.line)}+ ${label}`;
+}
+
+function getStrength(count: number): PPPPick['strength'] {
+  if (count >= 4) return 'Nuclear Spike';
+  if (count >= 3) return 'Super Spike';
+  return 'Spike';
+}
+
+function marketPriority(market: string): number {
+  if (market === 'Alt Points') return 1;
+  if (market === 'Alt Assists') return 2;
+  if (market === 'Alt Rebounds') return 3;
+  if (market === 'Alt Threes') return 4;
+  return 99;
+}
+
+function preferredTargets(signalMarket: string): string[] {
+  if (signalMarket === 'Alt Points') return ['Alt Assists', 'Alt Threes', 'Alt Rebounds'];
+  if (signalMarket === 'Alt Assists') return ['Alt Points', 'Alt Threes'];
+  if (signalMarket === 'Alt Rebounds') return ['Alt Points', 'Alt Threes'];
+  if (signalMarket === 'Alt Threes') return ['Alt Points', 'Alt Assists'];
+  return [];
+}
+
+function targetBand(targetMarket: string) {
+  if (targetMarket === 'Alt Assists') return { min: 100, max: 260, ideal: 140 };
+  if (targetMarket === 'Alt Threes') return { min: 100, max: 260, ideal: 145 };
+  if (targetMarket === 'Alt Points') return { min: 100, max: 300, ideal: 150 };
+  if (targetMarket === 'Alt Rebounds') return { min: 100, max: 260, ideal: 140 };
+  return { min: 100, max: 300, ideal: 145 };
+}
+
+function chooseSuggestedRow(playerRows: OddsRow[], signalMarket: string): OddsRow | null {
+  const targets = preferredTargets(signalMarket);
+
+  for (const targetMarket of targets) {
+    const band = targetBand(targetMarket);
+
+    const candidates = playerRows
+      .filter(
+        (row) =>
+          row.bookmaker_title === 'FanDuel' &&
+          row.market_name === targetMarket &&
+          toNum(row.over_price) != null
+      )
+      .filter((row) => {
+        const over = toNum(row.over_price);
+        return over != null && over >= band.min && over <= band.max;
+      })
+      .sort((a, b) => {
+        const aOver = toNum(a.over_price) ?? 0;
+        const bOver = toNum(b.over_price) ?? 0;
+        const aDiff = Math.abs(aOver - band.ideal);
+        const bDiff = Math.abs(bOver - band.ideal);
+
+        if (aDiff !== bDiff) return aDiff - bDiff;
+        if (a.line !== b.line) return a.line - b.line;
+        return aOver - bOver;
+      });
+
+    if (candidates.length > 0) return candidates[0];
+  }
+
+  for (const targetMarket of targets) {
+    const band = targetBand(targetMarket);
+
+    const fallback = playerRows
+      .filter(
+        (row) =>
+          row.bookmaker_title === 'FanDuel' &&
+          row.market_name === targetMarket &&
+          toNum(row.over_price) != null
+      )
+      .sort((a, b) => {
+        const aOver = toNum(a.over_price) ?? 0;
+        const bOver = toNum(b.over_price) ?? 0;
+        const aDiff = Math.abs(aOver - band.ideal);
+        const bDiff = Math.abs(bOver - band.ideal);
+
+        if (aDiff !== bDiff) return aDiff - bDiff;
+        if (a.line !== b.line) return a.line - b.line;
+        return aOver - bOver;
+      });
+
+    if (fallback.length > 0) return fallback[0];
+  }
+
+  return null;
+}
+
+function buildPPPPicks(rows: OddsRow[]): PPPPick[] {
+  const fanDuelRows = rows.filter((row) => row.bookmaker_title === 'FanDuel');
+
+  const grouped = new Map<string, OddsRow[]>();
+
+  for (const row of fanDuelRows) {
+    if (!row.player || !row.game || !row.market_name) continue;
+
+    const key = `${row.game}|${row.player}`;
+    const existing = grouped.get(key) ?? [];
+    existing.push(row);
+    grouped.set(key, existing);
+  }
+
+  const picks: PPPPick[] = [];
+
+  for (const [groupKey, playerRows] of grouped.entries()) {
+    const signalCandidates = playerRows
+      .filter((row) => ALLOWED_SIGNAL_MARKETS.has(row.market_name))
+      .filter((row) => {
+        const over = toNum(row.over_price);
+        return over != null && over >= SIGNAL_MIN && over <= SIGNAL_MAX;
+      });
+
+    if (signalCandidates.length < 2) continue;
+
+    const byMarket = new Map<string, OddsRow[]>();
+    for (const row of signalCandidates) {
+      const existing = byMarket.get(row.market_name) ?? [];
+      existing.push(row);
+      byMarket.set(row.market_name, existing);
+    }
+
+    const marketClusters = [...byMarket.entries()]
+      .map(([market, clusterRows]) => ({
+        market,
+        rows: clusterRows.sort((a, b) => a.line - b.line),
+      }))
+      .filter((entry) => entry.rows.length >= 2)
+      .sort((a, b) => {
+        if (b.rows.length !== a.rows.length) return b.rows.length - a.rows.length;
+        const aAvg =
+          a.rows.reduce((sum, row) => sum + (toNum(row.over_price) ?? 0), 0) / a.rows.length;
+        const bAvg =
+          b.rows.reduce((sum, row) => sum + (toNum(row.over_price) ?? 0), 0) / b.rows.length;
+
+        const aDiff = Math.abs(aAvg - -114);
+        const bDiff = Math.abs(bAvg - -114);
+
+        if (aDiff !== bDiff) return aDiff - bDiff;
+        return marketPriority(a.market) - marketPriority(b.market);
+      });
+
+    if (marketClusters.length === 0) continue;
+
+    const bestCluster = marketClusters[0];
+    const suggestionRow = chooseSuggestedRow(playerRows, bestCluster.market);
+    const [game, player] = groupKey.split('|');
+
+    picks.push({
+      game,
+      player,
+      signalMarket: bestCluster.market,
+      signalLines: bestCluster.rows
+        .map((row) => `${row.line} (${formatOdds(toNum(row.over_price))})`)
+        .join(', '),
+      strength: getStrength(bestCluster.rows.length),
+      suggestion: formatSuggestedLine(suggestionRow),
+      suggestionOdds: suggestionRow ? toNum(suggestionRow.over_price) : null,
+      signalKey: rowKey(bestCluster.rows[0]),
+      suggestionKey: suggestionRow ? rowKey(suggestionRow) : rowKey(bestCluster.rows[0]),
+    });
+  }
+
+  return picks.sort((a, b) => {
+    if (a.game !== b.game) return a.game.localeCompare(b.game);
+    return a.player.localeCompare(b.player);
+  });
+}
+
+/* =========================
+COMPONENT
+========================= */
 
 export default function ClientHeader() {
   const [showPPP, setShowPPP] = useState(false);
-  const [pppRows, setPppRows] = useState<PPPRow[]>([]);
+  const [pppRows, setPppRows] = useState<PPPPick[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
 
   const {
@@ -92,12 +349,7 @@ export default function ClientHeader() {
 
   const modalRef = useRef<HTMLDivElement | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
-
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-
-  /* =========================
-  DRAG LOGIC
-  ========================= */
 
   const onMouseMove = (e: MouseEvent) => {
     setPosition({
@@ -115,7 +367,6 @@ export default function ClientHeader() {
     if (!modalRef.current) return;
 
     const rect = modalRef.current.getBoundingClientRect();
-
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
@@ -125,10 +376,6 @@ export default function ClientHeader() {
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  /* =========================
-  FETCH PPP DATA
-  ========================= */
-
   useEffect(() => {
     if (!showPPP) return;
 
@@ -137,35 +384,39 @@ export default function ClientHeader() {
     fetch('/api/odds/latest')
       .then((r) => r.json())
       .then((data) => {
-        const rows = (data.rows || [])
-          .filter((r: PPPRow) => r.over_price === -114 && r.under_price === -114)
-          .sort((a: PPPRow, b: PPPRow) => a.game.localeCompare(b.game));
+        const rawRows: OddsRow[] = Array.isArray(data.rows) ? data.rows : [];
+        const picks = buildPPPPicks(rawRows);
 
-        setPppRows(rows);
-        setPppCount(rows.length);
+        setPppRows(picks);
+        setPppCount(picks.length);
 
         setPppKeys(
-          new Set(
-            rows.map(
-              (r: PPPRow) =>
-                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
-            )
-          )
+          new Set(picks.flatMap((pick) => [pick.signalKey, pick.suggestionKey]))
         );
       })
+      .catch(() => {
+        setPppRows([]);
+        setPppCount(0);
+        setPppKeys(new Set());
+      })
       .finally(() => setLoadingPPP(false));
-  }, [showPPP, setPppKeys, setPppCount]);
+  }, [showPPP, setPppCount, setPppKeys]);
 
-  /* =========================
-  UI
-  ========================= */
+  const copyText = useMemo(() => {
+    return pppRows
+      .map(
+        (row) =>
+          `${row.game} | ${row.player} | ${row.strength} | Signal: ${row.signalMarket} -> ${row.signalLines} | Play: ${row.suggestion}${row.suggestionOdds != null ? ` (${formatOdds(row.suggestionOdds)})` : ''}`
+      )
+      .join('\n')
+      .trim();
+  }, [pppRows]);
 
   return (
     <>
       <header className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
-
           <div>
             <div className="title">NBA Dashboard | PlayerParty (v A3.21)</div>
             <div className="subtitle">
@@ -178,7 +429,7 @@ export default function ClientHeader() {
           <button
             className="pill"
             style={{
-              background: 'linear-gradient(135deg,#f5c542,#d4a017)',
+              background: 'linear-gradient(135deg, #f5c542, #d4a017)',
               color: '#000',
               fontWeight: 700,
               display: 'inline-flex',
@@ -188,7 +439,6 @@ export default function ClientHeader() {
             onClick={() => setShowPPP(true)}
           >
             <span>👑 PPP</span>
-
             <span
               style={{
                 background: 'rgba(0,0,0,0.15)',
@@ -201,12 +451,7 @@ export default function ClientHeader() {
             </span>
           </button>
 
-          <a
-            className="pill"
-            href="/api/odds/csv"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
             Export CSV
           </a>
         </div>
@@ -230,12 +475,13 @@ export default function ClientHeader() {
               position: 'absolute',
               top: position ? position.y : '10%',
               left: position ? position.x : '10%',
-              minWidth: 520,
+              minWidth: 760,
               minHeight: 320,
-              maxWidth: '90vw',
+              maxWidth: '95vw',
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
+              cursor: 'default',
             }}
           >
             <div
@@ -269,44 +515,75 @@ export default function ClientHeader() {
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Game</th>
-                      <th>Player</th>
-                      <th>Market</th>
-                      <th>Line</th>
-                      <th>Book</th>
-                    </tr>
-                  </thead>
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <button
+                      className="pill"
+                      onClick={() => {
+                        navigator.clipboard.writeText(copyText);
+                      }}
+                    >
+                      📋 Copy
+                    </button>
 
-                  <tbody>
-                    {pppRows.map((r, i) => {
-                      const key =
-                        `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                    <button
+                      className="pill"
+                      onClick={() => {
+                        const parlayText = pppRows
+                          .map(
+                            (row) =>
+                              `${row.player} ${row.suggestion}${row.suggestionOdds != null ? ` (${formatOdds(row.suggestionOdds)})` : ''} (${row.game})`
+                          )
+                          .join('\n');
 
-                      return (
-                        <tr
-                          key={i}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => scrollToKey(key)}
-                        >
-                          <td>
-                            <GameLogos game={r.game} />
-                          </td>
+                        alert(`PPP Parlay:\n\n${parlayText}`);
+                      }}
+                    >
+                      🧾 Build Parlay
+                    </button>
+                  </div>
 
-                          <td>{r.player}</td>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Game</th>
+                        <th>Player</th>
+                        <th>Strength</th>
+                        <th>Signal Market</th>
+                        <th>Cluster</th>
+                        <th>Exact Spike Line</th>
+                        <th>Play</th>
+                        <th>Play Odds</th>
+                      </tr>
+                    </thead>
 
-                          <td>{r.market_name}</td>
+                    <tbody>
+                      {pppRows.map((row, i) => {
+                        const exactSignalLine = row.signalLines.split(', ')[0] ?? row.signalLines;
 
-                          <td>{r.line}</td>
-
-                          <td>{r.bookmaker_title}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        return (
+                          <tr
+                            key={i}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => scrollToKey(row.suggestionKey)}
+                            title="Click to scroll to suggested play"
+                          >
+                            <td>
+                              <GameLogos game={row.game} />
+                            </td>
+                            <td>{row.player}</td>
+                            <td>{row.strength}</td>
+                            <td>{row.signalMarket}</td>
+                            <td>{row.signalLines}</td>
+                            <td>{exactSignalLine}</td>
+                            <td>{row.suggestion}</td>
+                            <td>{formatOdds(row.suggestionOdds)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </div>
