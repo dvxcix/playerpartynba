@@ -6,7 +6,7 @@ import PPicon from '@/lib/PPicon.png';
 import { usePPP } from '@/components/PPPContext';
 
 /* =========================
-   TEAM LOGOS
+TEAM LOGOS
 ========================= */
 
 import PHI from '@/lib/nbateams/76ers.png';
@@ -54,7 +54,6 @@ function normalizeTeamKey(team: string) {
 
 function GameLogos({ game }: { game: string }) {
   const [awayRaw, homeRaw] = game.split('@');
-
   const AwayLogo = TEAM_LOGOS[normalizeTeamKey(awayRaw)];
   const HomeLogo = TEAM_LOGOS[normalizeTeamKey(homeRaw)];
 
@@ -68,49 +67,8 @@ function GameLogos({ game }: { game: string }) {
 }
 
 /* =========================
-   SPIKE ENGINE HELPERS
+TYPES
 ========================= */
-
-function getMarketType(market: string) {
-
-  const m = market.toLowerCase();
-
-  if (m.includes("assists")) return "AST";
-  if (m.includes("rebounds")) return "REB";
-  if (m.includes("points")) return "PTS";
-  if (m.includes("threes")) return "3PM";
-
-  return "OTHER";
-}
-
-function calculateSpikeScore(row: any) {
-
-  let score = 1000;
-
-  const odds = row.over_price ?? 0;
-
-  score += odds * 0.5;
-
-  const anchorMarket = getMarketType(row.anchor_market ?? "");
-  const spikeMarket = getMarketType(row.market_name ?? "");
-
-  if (anchorMarket !== spikeMarket) {
-    score += 120; // CROSS MARKET BOOST
-  }
-
-  if (spikeMarket === "AST") score += 40;
-  else if (spikeMarket === "REB") score += 30;
-  else if (spikeMarket === "PTS") score += 20;
-  else if (spikeMarket === "3PM") score += 15;
-
-  if (row.ladderSteps && row.ladderSteps <= 4) {
-    score += 50;
-  }
-
-  return Math.round(score);
-}
-
-/* ========================= */
 
 type PPPRow = {
   game: string;
@@ -120,7 +78,67 @@ type PPPRow = {
   bookmaker_title: string;
   over_price: number;
   under_price: number;
+
+  score?: number;
+  spike_market?: string;
+  spike_line?: number;
+  spike_odds?: number;
 };
+
+/* =========================
+SPIKE ENGINE
+========================= */
+
+const ANCHOR_PRICES = [-112, -113, -114, -118];
+
+function isAnchor(r: PPPRow) {
+  return ANCHOR_PRICES.includes(r.under_price);
+}
+
+function getMarketType(m: string) {
+  if (m.includes('Points')) return 'PTS';
+  if (m.includes('Rebounds')) return 'REB';
+  if (m.includes('Assists')) return 'AST';
+  if (m.includes('Threes')) return '3PM';
+  return '';
+}
+
+function allowedSpike(anchor: string, spike: string) {
+
+  if (anchor === 'PTS')
+    return spike === 'REB' || spike === 'AST' || spike === '3PM';
+
+  if (anchor === 'REB')
+    return spike === 'PTS' || spike === 'AST';
+
+  if (anchor === 'AST')
+    return spike === 'PTS' || spike === '3PM';
+
+  if (anchor === '3PM')
+    return spike === 'PTS';
+
+  return false;
+}
+
+function calculateSpikeScore(anchor: PPPRow, spike: PPPRow) {
+
+  let score = 1000;
+
+  const price = spike.over_price;
+
+  if (price >= 150) score += 20;
+  if (price >= 200) score += 40;
+  if (price >= 300) score += 60;
+  if (price >= 500) score += 90;
+
+  if (spike.market_name.includes('Threes')) score += 20;
+
+  return score;
+}
+
+/* =========================
+HEADER
+========================= */
 
 export default function ClientHeader() {
 
@@ -138,7 +156,6 @@ export default function ClientHeader() {
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   const dragOffset = useRef({ x: 0, y: 0 });
-
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
   const onMouseMove = (e: MouseEvent) => {
@@ -154,22 +171,18 @@ export default function ClientHeader() {
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
-
     if (!modalRef.current) return;
-
     const rect = modalRef.current.getBoundingClientRect();
-
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
-
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
 
   /* =========================
-     FETCH PPP DATA
+  FETCH + SPIKE ENGINE
   ========================= */
 
   useEffect(() => {
@@ -182,41 +195,66 @@ export default function ClientHeader() {
       .then((r) => r.json())
       .then((data) => {
 
-        const rows = (data.rows || [])
-          .filter((r: any) =>
-            [-112, -113, -114, -118].includes(r.under_price)
-          )
-          .map((r: any) => ({
-            ...r,
-            anchor_market: r.market_name,
-            anchor_line: r.line,
-            ladderSteps: 0,
-            score: calculateSpikeScore(r)
-          }))
-          .sort((a: any, b: any) => b.score - a.score);
+        const rows: PPPRow[] = data.rows || [];
 
-        setPppRows(rows);
-        setPppCount(rows.length);
+        const anchors = rows.filter(isAnchor);
+
+        const spikes: PPPRow[] = [];
+
+        for (const anchor of anchors) {
+
+          const anchorType = getMarketType(anchor.market_name);
+
+          const candidates = rows.filter(
+            r =>
+              r.player === anchor.player &&
+              allowedSpike(anchorType, getMarketType(r.market_name)) &&
+              r.over_price >= 120
+          );
+
+          for (const spike of candidates) {
+
+            const score = calculateSpikeScore(anchor, spike);
+
+            spikes.push({
+              ...anchor,
+              score,
+              spike_market: spike.market_name,
+              spike_line: spike.line,
+              spike_odds: spike.over_price,
+            });
+
+          }
+
+        }
+
+        spikes.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+        setPppRows(spikes);
+
+        setPppCount(spikes.length);
 
         setPppKeys(
           new Set(
-            rows.map(
-              (r: any) =>
+            spikes.map(
+              (r) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
+
       })
       .finally(() => setLoadingPPP(false));
 
   }, [showPPP, setPppKeys, setPppCount]);
+
+  /* ========================= */
 
   return (
     <>
       <header className="header">
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
 
           <div>
@@ -225,7 +263,6 @@ export default function ClientHeader() {
               Check all odds for NBA games on Today, updated every 15min.
             </div>
           </div>
-
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -242,7 +279,6 @@ export default function ClientHeader() {
             }}
             onClick={() => setShowPPP(true)}
           >
-
             <span>👑 PPP</span>
 
             <span
@@ -263,7 +299,6 @@ export default function ClientHeader() {
           </a>
 
         </div>
-
       </header>
 
       {showPPP && (
@@ -276,7 +311,6 @@ export default function ClientHeader() {
           }}
           onClick={() => setShowPPP(false)}
         >
-
           <div
             ref={modalRef}
             className="panel"
@@ -291,7 +325,6 @@ export default function ClientHeader() {
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
-              cursor: 'default',
             }}
           >
 
@@ -323,29 +356,28 @@ export default function ClientHeader() {
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
-                <div>No PlayerPartyPicks found.</div>
+                <div>No spikes detected.</div>
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-
                 <table className="table">
 
                   <thead>
                     <tr>
                       <th>Game</th>
                       <th>Player</th>
-                      <th>Market</th>
-                      <th>Line</th>
+                      <th>Anchor</th>
+                      <th>Spike</th>
+                      <th>Odds</th>
                       <th>Score</th>
-                      <th>Book</th>
                     </tr>
                   </thead>
 
                   <tbody>
-
                     {pppRows.map((r, i) => {
 
-                      const key = `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                      const key =
+                        `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
                       return (
                         <tr
@@ -358,31 +390,32 @@ export default function ClientHeader() {
 
                           <td>{r.player}</td>
 
-                          <td>{r.market_name}</td>
+                          <td>
+                            {r.market_name} {r.line}
+                          </td>
 
-                          <td>{r.line}</td>
+                          <td>
+                            {r.spike_market} {r.spike_line}
+                          </td>
+
+                          <td>
+                            +{r.spike_odds}
+                          </td>
 
                           <td>{r.score}</td>
-
-                          <td>{r.bookmaker_title}</td>
 
                         </tr>
                       );
                     })}
-
                   </tbody>
 
                 </table>
-
               )}
 
             </div>
-
           </div>
-
         </div>
       )}
-
     </>
   );
 }
