@@ -6,7 +6,7 @@ import PPicon from '@/lib/PPicon.png';
 import { usePPP } from '@/components/PPPContext';
 
 /* =========================
-TEAM LOGOS
+   TEAM LOGOS
 ========================= */
 
 import PHI from '@/lib/nbateams/76ers.png';
@@ -67,7 +67,7 @@ function GameLogos({ game }: { game: string }) {
 }
 
 /* =========================
-TYPES
+   TYPES
 ========================= */
 
 type PPPRow = {
@@ -83,65 +83,119 @@ type PPPRow = {
   spike_market?: string;
   spike_line?: number;
   spike_odds?: number;
+  spike_book?: string;
+  bet?: string;
+  read?: string;
+  anchor_market_type?: string;
+  spike_market_type?: string;
+  tier?: 'SPIKE' | 'NUKE';
 };
 
 /* =========================
-SPIKE ENGINE
+   SPIKE ENGINE
 ========================= */
 
-const ANCHOR_PRICES = [-112, -113, -114, -118];
+const ANCHOR_PRICES = new Set([-112, -113, -114, -118]);
+const MIN_SPIKE_ODDS = 150;
 
-function isAnchor(r: PPPRow) {
-  return ANCHOR_PRICES.includes(r.under_price);
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
-function getMarketType(m: string) {
-  if (m.includes('Points')) return 'PTS';
-  if (m.includes('Rebounds')) return 'REB';
-  if (m.includes('Assists')) return 'AST';
-  if (m.includes('Threes')) return '3PM';
-  return '';
+function getMarketType(market: string): 'PTS' | 'REB' | 'AST' | '3PM' | 'OTHER' {
+  const m = market.toLowerCase();
+
+  if (m.includes('threes')) return '3PM';
+  if (m.includes('assists')) return 'AST';
+  if (m.includes('rebounds')) return 'REB';
+  if (m.includes('points')) return 'PTS';
+
+  return 'OTHER';
 }
 
-function allowedSpike(anchor: string, spike: string) {
+function isAnchor(row: PPPRow): boolean {
+  return ANCHOR_PRICES.has(row.under_price);
+}
 
-  if (anchor === 'PTS')
-    return spike === 'REB' || spike === 'AST' || spike === '3PM';
-
-  if (anchor === 'REB')
-    return spike === 'PTS' || spike === 'AST';
-
-  if (anchor === 'AST')
-    return spike === 'PTS' || spike === '3PM';
-
-  if (anchor === '3PM')
-    return spike === 'PTS';
-
+function allowedSpike(anchorType: string, spikeType: string): boolean {
+  if (anchorType === 'PTS') return spikeType === 'REB' || spikeType === 'AST' || spikeType === '3PM';
+  if (anchorType === 'REB') return spikeType === 'PTS' || spikeType === 'AST';
+  if (anchorType === 'AST') return spikeType === 'PTS' || spikeType === '3PM';
+  if (anchorType === '3PM') return spikeType === 'PTS';
   return false;
 }
 
-function calculateSpikeScore(anchor: PPPRow, spike: PPPRow) {
+function minRequiredJump(marketType: string): number {
+  if (marketType === 'PTS') return 4;
+  if (marketType === 'REB') return 3;
+  if (marketType === 'AST') return 3;
+  if (marketType === '3PM') return 2;
+  return 999;
+}
+
+function calculateJump(anchorLine: number, spikeLine: number): number {
+  return spikeLine - anchorLine;
+}
+
+function calculateSpikeScore(anchor: PPPRow, spike: PPPRow): number {
+  const anchorType = getMarketType(anchor.market_name);
+  const spikeType = getMarketType(spike.market_name);
+  const jump = calculateJump(anchor.line, spike.line);
 
   let score = 1000;
 
-  const price = spike.over_price;
+  score += spike.over_price * 0.5;
 
-  if (price >= 150) score += 20;
-  if (price >= 200) score += 40;
-  if (price >= 300) score += 60;
-  if (price >= 500) score += 90;
+  if (allowedSpike(anchorType, spikeType)) score += 140;
 
-  if (spike.market_name.includes('Threes')) score += 20;
+  if (spikeType === 'AST') score += 40;
+  else if (spikeType === 'REB') score += 30;
+  else if (spikeType === 'PTS') score += 20;
+  else if (spikeType === '3PM') score += 25;
 
-  return score;
+  if (jump === minRequiredJump(spikeType)) score += 60;
+  else if (jump === minRequiredJump(spikeType) + 1) score += 35;
+  else if (jump >= minRequiredJump(spikeType) + 2) score += 10;
+
+  if (spike.over_price >= 200) score += 15;
+  if (spike.over_price >= 300) score += 25;
+  if (spike.over_price >= 500) score += 40;
+
+  return Math.round(score);
+}
+
+function buildRead(anchor: PPPRow, spike: PPPRow): string {
+  const anchorType = getMarketType(anchor.market_name);
+  const spikeType = getMarketType(spike.market_name);
+
+  const anchorLabel = anchorType === '3PM' ? 'threes' :
+    anchorType === 'AST' ? 'assists' :
+      anchorType === 'REB' ? 'rebounds' : 'points';
+
+  const spikeLabel = spikeType === '3PM' ? 'threes' :
+    spikeType === 'AST' ? 'assists' :
+      spikeType === 'REB' ? 'rebounds' : 'points';
+
+  if (anchorType !== spikeType) {
+    return `${anchorLabel} anchor → ${spikeLabel} spike`;
+  }
+
+  return `${spikeLabel} ladder spike`;
+}
+
+function buildBet(spike: PPPRow): string {
+  return `OVER ${spike.line}`;
+}
+
+function spikeTier(score: number): 'SPIKE' | 'NUKE' {
+  return score >= 1180 ? 'NUKE' : 'SPIKE';
 }
 
 /* =========================
-HEADER
+   COMPONENT
 ========================= */
 
 export default function ClientHeader() {
-
   const [showPPP, setShowPPP] = useState(false);
   const [pppRows, setPppRows] = useState<PPPRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
@@ -154,7 +208,6 @@ export default function ClientHeader() {
   } = usePPP();
 
   const modalRef = useRef<HTMLDivElement | null>(null);
-
   const dragOffset = useRef({ x: 0, y: 0 });
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -172,21 +225,23 @@ export default function ClientHeader() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
+
     const rect = modalRef.current.getBoundingClientRect();
+
     dragOffset.current = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
+
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
 
   /* =========================
-  FETCH + SPIKE ENGINE
+     FETCH + STRICT PPP ENGINE
   ========================= */
 
   useEffect(() => {
-
     if (!showPPP) return;
 
     setLoadingPPP(true);
@@ -194,66 +249,94 @@ export default function ClientHeader() {
     fetch('/api/odds/latest')
       .then((r) => r.json())
       .then((data) => {
+        const rows: PPPRow[] = Array.isArray(data?.rows) ? data.rows : [];
 
-        const rows: PPPRow[] = data.rows || [];
+        const cleanedRows = rows.filter(
+          (r) =>
+            typeof r.player === 'string' &&
+            typeof r.market_name === 'string' &&
+            typeof r.game === 'string' &&
+            typeof r.bookmaker_title === 'string' &&
+            isFiniteNumber(r.line) &&
+            isFiniteNumber(r.over_price) &&
+            isFiniteNumber(r.under_price)
+        );
 
-        const anchors = rows.filter(isAnchor);
+        const anchors = cleanedRows.filter((r) => {
+          const anchorType = getMarketType(r.market_name);
+          return isAnchor(r) && anchorType !== 'OTHER';
+        });
 
-        const spikes: PPPRow[] = [];
+        const bestSpikeByPlayer = new Map<string, PPPRow>();
 
         for (const anchor of anchors) {
-
           const anchorType = getMarketType(anchor.market_name);
 
-          const candidates = rows.filter(
-            r =>
-              r.player === anchor.player &&
-              allowedSpike(anchorType, getMarketType(r.market_name)) &&
-              r.over_price >= 120
-          );
+          const samePlayerRows = cleanedRows.filter((r) => r.player === anchor.player);
 
-          for (const spike of candidates) {
+          for (const spike of samePlayerRows) {
+            const spikeType = getMarketType(spike.market_name);
+
+            if (spikeType === 'OTHER') continue;
+            if (spike.market_name === anchor.market_name) continue;
+            if (!allowedSpike(anchorType, spikeType)) continue;
+            if (!isFiniteNumber(spike.over_price) || spike.over_price < MIN_SPIKE_ODDS) continue;
+
+            const jump = calculateJump(anchor.line, spike.line);
+            if (jump < minRequiredJump(spikeType)) continue;
 
             const score = calculateSpikeScore(anchor, spike);
 
-            spikes.push({
+            const candidate: PPPRow = {
               ...anchor,
               score,
               spike_market: spike.market_name,
               spike_line: spike.line,
               spike_odds: spike.over_price,
-            });
+              spike_book: spike.bookmaker_title,
+              bet: buildBet(spike),
+              read: buildRead(anchor, spike),
+              anchor_market_type: anchorType,
+              spike_market_type: spikeType,
+              tier: spikeTier(score),
+            };
 
+            const existing = bestSpikeByPlayer.get(anchor.player);
+
+            if (!existing || (candidate.score ?? 0) > (existing.score ?? 0)) {
+              bestSpikeByPlayer.set(anchor.player, candidate);
+            }
           }
-
         }
 
-        spikes.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        const strictRows = Array.from(bestSpikeByPlayer.values()).sort(
+          (a, b) => (b.score ?? 0) - (a.score ?? 0)
+        );
 
-        setPppRows(spikes);
-
-        setPppCount(spikes.length);
+        setPppRows(strictRows);
+        setPppCount(strictRows.length);
 
         setPppKeys(
           new Set(
-            spikes.map(
+            strictRows.map(
               (r) =>
                 `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`
             )
           )
         );
-
+      })
+      .catch((err) => {
+        console.error('PPP load failed:', err);
+        setPppRows([]);
+        setPppCount(0);
+        setPppKeys(new Set());
       })
       .finally(() => setLoadingPPP(false));
-
   }, [showPPP, setPppKeys, setPppCount]);
-
-  /* ========================= */
 
   return (
     <>
       <header className="header">
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
 
@@ -266,7 +349,6 @@ export default function ClientHeader() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-
           <button
             className="pill"
             style={{
@@ -291,13 +373,11 @@ export default function ClientHeader() {
             >
               {pppCount}
             </span>
-
           </button>
 
           <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
             Export CSV
           </a>
-
         </div>
       </header>
 
@@ -319,15 +399,15 @@ export default function ClientHeader() {
               position: 'absolute',
               top: position ? position.y : '10%',
               left: position ? position.x : '10%',
-              minWidth: 520,
+              minWidth: 720,
               minHeight: 320,
-              maxWidth: '90vw',
+              maxWidth: '92vw',
               maxHeight: '85vh',
               resize: 'both',
               overflow: 'auto',
+              cursor: 'default',
             }}
           >
-
             <div
               className="panelHeader"
               style={{ cursor: 'move', userSelect: 'none' }}
@@ -352,7 +432,6 @@ export default function ClientHeader() {
             </button>
 
             <div className="panelBody">
-
               {loadingPPP && <div>Loading…</div>}
 
               {!loadingPPP && pppRows.length === 0 && (
@@ -360,62 +439,97 @@ export default function ClientHeader() {
               )}
 
               {!loadingPPP && pppRows.length > 0 && (
-                <table className="table">
+                <>
+                  <div
+                    style={{
+                      marginBottom: 10,
+                      fontSize: 13,
+                      opacity: 0.85,
+                    }}
+                  >
+                    FanDuel only • anchor = UNDER -112/-113/-114/-118 • strict spike filter
+                  </div>
 
-                  <thead>
-                    <tr>
-                      <th>Game</th>
-                      <th>Player</th>
-                      <th>Anchor</th>
-                      <th>Spike</th>
-                      <th>Odds</th>
-                      <th>Score</th>
-                    </tr>
-                  </thead>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Game</th>
+                        <th>Player</th>
+                        <th>Anchor</th>
+                        <th>Spike</th>
+                        <th>Odds</th>
+                        <th>Tier</th>
+                        <th>Score</th>
+                        <th>BET</th>
+                        <th>Read</th>
+                      </tr>
+                    </thead>
 
-                  <tbody>
-                    {pppRows.map((r, i) => {
+                    <tbody>
+                      {pppRows.map((r, i) => {
+                        const key =
+                          `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
-                      const key =
-                        `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                        return (
+                          <tr
+                            key={i}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => scrollToKey(key)}
+                            title="Click to scroll main table to the anchor row"
+                          >
+                            <td><GameLogos game={r.game} /></td>
 
-                      return (
-                        <tr
-                          key={i}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => scrollToKey(key)}
-                        >
+                            <td>{r.player}</td>
 
-                          <td><GameLogos game={r.game} /></td>
+                            <td>
+                              {r.market_name} {r.line} (U {r.under_price})
+                            </td>
 
-                          <td>{r.player}</td>
+                            <td>
+                              {r.spike_market} {r.spike_line}
+                            </td>
 
-                          <td>
-                            {r.market_name} {r.line}
-                          </td>
+                            <td>
+                              +{r.spike_odds}
+                            </td>
 
-                          <td>
-                            {r.spike_market} {r.spike_line}
-                          </td>
+                            <td
+                              style={{
+                                fontWeight: 800,
+                                color: r.tier === 'NUKE' ? '#ff9f1c' : '#5eead4',
+                              }}
+                            >
+                              {r.tier}
+                            </td>
 
-                          <td>
-                            +{r.spike_odds}
-                          </td>
+                            <td style={{ fontWeight: 700 }}>
+                              {r.score}
+                            </td>
 
-                          <td>{r.score}</td>
+                            <td
+                              style={{
+                                color: '#00ff9c',
+                                fontWeight: 800,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {r.bet}
+                            </td>
 
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-
-                </table>
+                            <td style={{ opacity: 0.9 }}>
+                              {r.read}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
-
             </div>
           </div>
         </div>
       )}
     </>
   );
-}
+                }
