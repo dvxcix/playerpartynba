@@ -461,6 +461,79 @@ export default function ClientHeader() {
 
   return (
     <>
+      <style jsx>{`
+        .pppModalPanel {
+          box-sizing: border-box;
+        }
+
+        .pppSplitGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+          gap: 16px;
+          align-items: start;
+        }
+
+        .pppTableWrap {
+          width: 100%;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .pppLeftTable {
+          min-width: 860px;
+          width: max-content;
+        }
+
+        .pppRightTable {
+          min-width: 560px;
+          width: max-content;
+        }
+
+        .pppTableWrap :global(th),
+        .pppTableWrap :global(td) {
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+
+        .pppEmptyNote {
+          margin-top: 10px;
+          font-size: 13px;
+          opacity: 0.75;
+        }
+
+        @media (max-width: 1200px) {
+          .pppSplitGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .pppModalPanel {
+            left: 12px !important;
+            right: 12px !important;
+            top: 12px !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            max-height: calc(100vh - 24px) !important;
+            resize: none !important;
+          }
+
+          .pppSplitGrid {
+            gap: 12px;
+          }
+
+          .pppLeftTable {
+            min-width: 760px;
+          }
+
+          .pppRightTable {
+            min-width: 520px;
+          }
+        }
+      `}</style>
+
       <header className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Image src={PPicon} alt="PlayerParty" width={36} height={36} priority />
@@ -582,7 +655,7 @@ export default function ClientHeader() {
         >
           <div
             ref={modalRef}
-            className="panel"
+            className="panel pppModalPanel"
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
@@ -678,131 +751,130 @@ export default function ClientHeader() {
                     </span>
                   </div>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)',
-                      gap: 16,
-                      alignItems: 'start',
-                    }}
-                  >
+                  <div className="pppSplitGrid">
                     <div style={{ minWidth: 0 }}>
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Game</th>
-                            <th>Player</th>
-                            <th>Anchor</th>
-                            <th>Spike</th>
-                            <th>Odds</th>
-                            <th>Tier</th>
-                            <th>Score</th>
-                            <th>BET</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {filteredRows.map((r, i) => {
-                            const key =
-                              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
-
-                            return (
-                              <tr
-                                key={i}
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => scrollToKey(key)}
-                                title="Click to scroll main table to the anchor row"
-                              >
-                                <td><GameLogos game={r.game} /></td>
-
-                                <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
-
-                                <td>
-                                  {r.market_name} {r.line} (U {r.under_price})
-                                </td>
-
-                                <td>
-                                  {r.spike_market} {r.spike_line}
-                                </td>
-
-                                <td>
-                                  +{r.spike_odds}
-                                </td>
-
-                                <td
-                                  style={{
-                                    fontWeight: 800,
-                                    color: r.tier === 'NUKE' ? '#ff9f1c' : '#5eead4',
-                                  }}
-                                >
-                                  {r.tier}
-                                </td>
-
-                                <td style={{ fontWeight: 700 }}>
-                                  {r.score}
-                                </td>
-
-                                <td
-                                  style={{
-                                    color: '#00ff9c',
-                                    fontWeight: 800,
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {r.bet}
-                                </td>
+                      {filteredRows.length > 0 ? (
+                        <div className="pppTableWrap">
+                          <table className="table pppLeftTable">
+                            <thead>
+                              <tr>
+                                <th>Game</th>
+                                <th>Player</th>
+                                <th>Anchor</th>
+                                <th>Spike</th>
+                                <th>Odds</th>
+                                <th>Tier</th>
+                                <th>Score</th>
+                                <th>BET</th>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                            </thead>
+
+                            <tbody>
+                              {filteredRows.map((r, i) => {
+                                const key =
+                                  `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+
+                                return (
+                                  <tr
+                                    key={i}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => scrollToKey(key)}
+                                    title="Click to scroll main table to the anchor row"
+                                  >
+                                    <td><GameLogos game={r.game} /></td>
+
+                                    <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+
+                                    <td>
+                                      {r.market_name} {r.line} (U {r.under_price})
+                                    </td>
+
+                                    <td>
+                                      {r.spike_market} {r.spike_line}
+                                    </td>
+
+                                    <td>
+                                      +{r.spike_odds}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        fontWeight: 800,
+                                        color: r.tier === 'NUKE' ? '#ff9f1c' : '#5eead4',
+                                      }}
+                                    >
+                                      {r.tier}
+                                    </td>
+
+                                    <td style={{ fontWeight: 700 }}>
+                                      {r.score}
+                                    </td>
+
+                                    <td
+                                      style={{
+                                        color: '#00ff9c',
+                                        fontWeight: 800,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {r.bet}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="pppEmptyNote">No PPP picks for this game filter.</div>
+                      )}
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Game</th>
-                            <th>Player</th>
-                            <th>Leg</th>
-                            <th>Odds</th>
-                            <th>Book</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {filteredHeavyLegRows.map((r, i) => {
-                            const key =
-                              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
-
-                            return (
-                              <tr
-                                key={`${key}|${r.price}|${i}`}
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => scrollToKey(key)}
-                                title="Click to scroll main table to this row"
-                              >
-                                <td><GameLogos game={r.game} /></td>
-
-                                <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
-
-                                <td>
-                                  {r.market_name} {r.line} (O)
-                                </td>
-
-                                <td>{r.price}</td>
-
-                                <td>{r.bookmaker_title}</td>
+                      {filteredHeavyLegRows.length > 0 ? (
+                        <div className="pppTableWrap">
+                          <table className="table pppRightTable">
+                            <thead>
+                              <tr>
+                                <th>Game</th>
+                                <th>Player</th>
+                                <th>Leg</th>
+                                <th>Odds</th>
+                                <th>Book</th>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                            </thead>
 
-                      {filteredHeavyLegRows.length === 0 && (
-                        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.75 }}>
-                          No -600 / -1200 OVER legs.
+                            <tbody>
+                              {filteredHeavyLegRows.map((r, i) => {
+                                const key =
+                                  `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+
+                                return (
+                                  <tr
+                                    key={`${key}|${r.price}|${i}`}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => scrollToKey(key)}
+                                    title="Click to scroll main table to this row"
+                                  >
+                                    <td><GameLogos game={r.game} /></td>
+
+                                    <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+
+                                    <td>
+                                      {r.market_name} {r.line} (O)
+                                    </td>
+
+                                    <td>{r.price}</td>
+
+                                    <td>{r.bookmaker_title}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
+                      ) : (
+                        <div className="pppEmptyNote">No -600 / -1200 OVER legs.</div>
                       )}
                     </div>
                   </div>
