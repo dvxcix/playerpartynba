@@ -237,6 +237,7 @@ export default function ClientHeader() {
   const [pppRows, setPppRows] = useState<PPPRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
   const [gameFilter, setGameFilter] = useState('ALL');
+  const [refreshing, setRefreshing] = useState(false);
 
   const {
     setPppKeys,
@@ -273,6 +274,27 @@ export default function ClientHeader() {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const runManualRefresh = async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+
+    try {
+      const res = await fetch('/api/cron/fetch-odds', {
+        method: 'GET',
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        throw new Error(`Manual refresh failed: ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Manual refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   /* =========================
@@ -418,6 +440,70 @@ export default function ClientHeader() {
             >
               {pppCount}
             </span>
+          </button>
+
+          <button
+            type="button"
+            className="pill"
+            onClick={runManualRefresh}
+            disabled={refreshing}
+            title={refreshing ? 'Refreshing odds…' : 'Refresh odds now'}
+            aria-label={refreshing ? 'Refreshing odds' : 'Refresh odds now'}
+            style={{
+              width: 40,
+              minWidth: 40,
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: refreshing ? 'wait' : 'pointer',
+              opacity: refreshing ? 0.75 : 1,
+            }}
+          >
+            {refreshing ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M21 12a9 9 0 1 1-2.64-6.36"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M21 3v6h-6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <animateTransform
+                  attributeName="transform"
+                  attributeType="XML"
+                  type="rotate"
+                  from="0 12 12"
+                  to="360 12 12"
+                  dur="0.9s"
+                  repeatCount="indefinite"
+                />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M21 12a9 9 0 1 1-2.64-6.36"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M21 3v6h-6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
 
           <a className="pill" href="/api/odds/csv" target="_blank" rel="noreferrer">
@@ -616,4 +702,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-         }
+}
