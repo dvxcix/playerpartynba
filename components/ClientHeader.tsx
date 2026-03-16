@@ -124,7 +124,6 @@ type HeavyLegRow = {
   market_name: string;
   line: number;
   bookmaker_title: string;
-  side: 'OVER' | 'UNDER';
   price: number;
 };
 
@@ -132,7 +131,7 @@ type HeavyLegRow = {
 SPIKE ENGINE
 ========================= */
 
-const ANCHOR_PRICES = new Set([-112, -113, -114, -118]);
+const ANCHOR_PRICES = new Set([-114, -118]);
 const MIN_SPIKE_ODDS = 150;
 
 function isFiniteNumber(value: unknown): value is number {
@@ -245,10 +244,10 @@ COMPONENT
 export default function ClientHeader() {
   const [showPPP, setShowPPP] = useState(false);
   const [pppRows, setPppRows] = useState<PPPRow[]>([]);
+  const [heavyLegRows, setHeavyLegRows] = useState<HeavyLegRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
   const [gameFilter, setGameFilter] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
-  const [heavyLegRows, setHeavyLegRows] = useState<HeavyLegRow[]>([]);
 
   const {
     setPppKeys,
@@ -333,44 +332,35 @@ export default function ClientHeader() {
             isFiniteNumber(r.under_price)
         );
 
-        const heavyLegs: HeavyLegRow[] = [];
-
-        for (const r of cleanedRows) {
-          if (r.over_price === -600 || r.over_price === -1200) {
-            heavyLegs.push({
-              game: r.game,
-              player: r.player,
-              market_name: r.market_name,
-              line: r.line,
-              bookmaker_title: r.bookmaker_title,
-              side: 'OVER',
-              price: r.over_price,
-            });
-          }
-
-          if (r.under_price === -600 || r.under_price === -1200) {
-            heavyLegs.push({
-              game: r.game,
-              player: r.player,
-              market_name: r.market_name,
-              line: r.line,
-              bookmaker_title: r.bookmaker_title,
-              side: 'UNDER',
-              price: r.under_price,
-            });
-          }
-        }
-
-        heavyLegs.sort(
-          (a, b) =>
-            a.game.localeCompare(b.game) ||
-            a.player.localeCompare(b.player) ||
-            a.market_name.localeCompare(b.market_name) ||
-            a.line - b.line ||
-            a.price - b.price ||
-            a.bookmaker_title.localeCompare(b.bookmaker_title) ||
-            a.side.localeCompare(b.side)
+        const heavyLegSourceRows = rows.filter(
+          (r) =>
+            typeof r.player === 'string' &&
+            typeof r.market_name === 'string' &&
+            typeof r.game === 'string' &&
+            typeof r.bookmaker_title === 'string' &&
+            isFiniteNumber(r.line) &&
+            isFiniteNumber(r.over_price)
         );
+
+        const heavyRows: HeavyLegRow[] = heavyLegSourceRows
+          .filter((r) => r.over_price === -600 || r.over_price === -1200)
+          .map((r) => ({
+            game: r.game,
+            player: r.player,
+            market_name: r.market_name,
+            line: r.line,
+            bookmaker_title: r.bookmaker_title,
+            price: r.over_price,
+          }))
+          .sort(
+            (a, b) =>
+              a.game.localeCompare(b.game) ||
+              a.player.localeCompare(b.player) ||
+              a.market_name.localeCompare(b.market_name) ||
+              a.line - b.line ||
+              a.price - b.price ||
+              a.bookmaker_title.localeCompare(b.bookmaker_title)
+          );
 
         const anchors = cleanedRows.filter((r) => {
           const anchorType = getMarketType(r.market_name);
@@ -423,7 +413,7 @@ export default function ClientHeader() {
           (a, b) => (b.score ?? 0) - (a.score ?? 0)
         );
 
-        setHeavyLegRows(heavyLegs);
+        setHeavyLegRows(heavyRows);
         setPppRows(strictRows);
         setPppCount(strictRows.length);
 
@@ -463,13 +453,11 @@ export default function ClientHeader() {
       ? heavyLegRows
       : heavyLegRows.filter((r) => r.game === gameFilter);
 
-  const pppPlayers = new Set(pppRows.map((r) => r.player));
-  const heavyPlayers = new Set(heavyLegRows.map((r) => r.player));
-  const starredPlayers = new Set<string>();
-
-  pppPlayers.forEach((player) => {
-    if (heavyPlayers.has(player)) starredPlayers.add(player);
-  });
+  const leftPlayers = new Set(filteredRows.map((r) => r.player));
+  const rightPlayers = new Set(filteredHeavyLegRows.map((r) => r.player));
+  const starredPlayers = new Set(
+    Array.from(leftPlayers).filter((player) => rightPlayers.has(player))
+  );
 
   return (
     <>
@@ -648,7 +636,7 @@ export default function ClientHeader() {
                       opacity: 0.85,
                     }}
                   >
-                    FanDuel only • anchor = UNDER -112/-113/-114/-118 • strict spike filter
+                    FanDuel only • anchor = UNDER -114/-118 • strict spike filter
                   </div>
 
                   <div
@@ -686,167 +674,135 @@ export default function ClientHeader() {
                     </select>
 
                     <span style={{ fontSize: 12, opacity: 0.75 }}>
-                      Showing {filteredRows.length} PPP picks • {filteredHeavyLegRows.length} heavy legs
+                      Showing {filteredRows.length} PPP picks • {filteredHeavyLegRows.length} OVER legs
                     </span>
                   </div>
 
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)',
+                      gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)',
                       gap: 16,
                       alignItems: 'start',
                     }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          marginBottom: 8,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          opacity: 0.9,
-                        }}
-                      >
-                        PPP Picks
-                      </div>
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Game</th>
+                            <th>Player</th>
+                            <th>Anchor</th>
+                            <th>Spike</th>
+                            <th>Odds</th>
+                            <th>Tier</th>
+                            <th>Score</th>
+                            <th>BET</th>
+                          </tr>
+                        </thead>
 
-                      {filteredRows.length === 0 ? (
-                        <div style={{ fontSize: 13, opacity: 0.75 }}>
-                          No spikes detected.
-                        </div>
-                      ) : (
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Game</th>
-                              <th>Player</th>
-                              <th>Anchor</th>
-                              <th>Spike</th>
-                              <th>Odds</th>
-                              <th>Tier</th>
-                              <th>Score</th>
-                              <th>BET</th>
-                            </tr>
-                          </thead>
+                        <tbody>
+                          {filteredRows.map((r, i) => {
+                            const key =
+                              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
 
-                          <tbody>
-                            {filteredRows.map((r, i) => {
-                              const key =
-                                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                            return (
+                              <tr
+                                key={i}
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => scrollToKey(key)}
+                                title="Click to scroll main table to the anchor row"
+                              >
+                                <td><GameLogos game={r.game} /></td>
 
-                              return (
-                                <tr
-                                  key={i}
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => scrollToKey(key)}
-                                  title="Click to scroll main table to the anchor row"
+                                <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+
+                                <td>
+                                  {r.market_name} {r.line} (U {r.under_price})
+                                </td>
+
+                                <td>
+                                  {r.spike_market} {r.spike_line}
+                                </td>
+
+                                <td>
+                                  +{r.spike_odds}
+                                </td>
+
+                                <td
+                                  style={{
+                                    fontWeight: 800,
+                                    color: r.tier === 'NUKE' ? '#ff9f1c' : '#5eead4',
+                                  }}
                                 >
-                                  <td><GameLogos game={r.game} /></td>
+                                  {r.tier}
+                                </td>
 
-                                  <td>
-                                    {starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}
-                                  </td>
+                                <td style={{ fontWeight: 700 }}>
+                                  {r.score}
+                                </td>
 
-                                  <td>
-                                    {r.market_name} {r.line} (U {r.under_price})
-                                  </td>
-
-                                  <td>
-                                    {r.spike_market} {r.spike_line}
-                                  </td>
-
-                                  <td>
-                                    +{r.spike_odds}
-                                  </td>
-
-                                  <td
-                                    style={{
-                                      fontWeight: 800,
-                                      color: r.tier === 'NUKE' ? '#ff9f1c' : '#5eead4',
-                                    }}
-                                  >
-                                    {r.tier}
-                                  </td>
-
-                                  <td style={{ fontWeight: 700 }}>
-                                    {r.score}
-                                  </td>
-
-                                  <td
-                                    style={{
-                                      color: '#00ff9c',
-                                      fontWeight: 800,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {r.bet}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      )}
+                                <td
+                                  style={{
+                                    color: '#00ff9c',
+                                    fontWeight: 800,
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {r.bet}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          marginBottom: 8,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          opacity: 0.9,
-                        }}
-                      >
-                        -600 / -1200 Legs
-                      </div>
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Game</th>
+                            <th>Player</th>
+                            <th>Leg</th>
+                            <th>Odds</th>
+                            <th>Book</th>
+                          </tr>
+                        </thead>
 
-                      {filteredHeavyLegRows.length === 0 ? (
-                        <div style={{ fontSize: 13, opacity: 0.75 }}>
-                          No -600 / -1200 legs.
+                        <tbody>
+                          {filteredHeavyLegRows.map((r, i) => {
+                            const key =
+                              `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+
+                            return (
+                              <tr
+                                key={`${key}|${r.price}|${i}`}
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => scrollToKey(key)}
+                                title="Click to scroll main table to this row"
+                              >
+                                <td><GameLogos game={r.game} /></td>
+
+                                <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+
+                                <td>
+                                  {r.market_name} {r.line} (O)
+                                </td>
+
+                                <td>{r.price}</td>
+
+                                <td>{r.bookmaker_title}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {filteredHeavyLegRows.length === 0 && (
+                        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.75 }}>
+                          No -600 / -1200 OVER legs.
                         </div>
-                      ) : (
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Game</th>
-                              <th>Player</th>
-                              <th>Leg</th>
-                              <th>Odds</th>
-                              <th>Book</th>
-                            </tr>
-                          </thead>
-
-                          <tbody>
-                            {filteredHeavyLegRows.map((r, i) => {
-                              const key =
-                                `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
-
-                              return (
-                                <tr
-                                  key={`${key}|${r.side}|${r.price}|${i}`}
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => scrollToKey(key)}
-                                  title="Click to scroll main table to this row"
-                                >
-                                  <td><GameLogos game={r.game} /></td>
-
-                                  <td>
-                                    {starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}
-                                  </td>
-
-                                  <td>
-                                    {r.market_name} {r.line} ({r.side === 'OVER' ? 'O' : 'U'})
-                                  </td>
-
-                                  <td>{r.price}</td>
-
-                                  <td>{r.bookmaker_title}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
                       )}
                     </div>
                   </div>
