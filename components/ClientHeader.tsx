@@ -237,6 +237,32 @@ function spikeTier(score: number): 'SPIKE' | 'NUKE' {
   return score >= 1180 ? 'NUKE' : 'SPIKE';
 }
 
+function getAnchorGrade(underPrice: number): { label: 'A' | 'A+'; color: string } {
+  return underPrice === -118
+    ? { label: 'A+', color: '#22c55e' }
+    : { label: 'A', color: '#f5c542' };
+}
+
+function getOverGrade(price: number): { label: 'A' | 'A+'; color: string } {
+  return price === -1200
+    ? { label: 'A+', color: '#22c55e' }
+    : { label: 'A', color: '#f5c542' };
+}
+
+function getDisplayMarketName(marketName: string): string {
+  return marketName.replace(/^Alt\s+/i, '');
+}
+
+function getAdjustedOverTarget(line: number, price: number): number {
+  const madeLine = Math.floor(line) + 1;
+  const multiplier = price === -1200 ? 3 : 2;
+  return madeLine * multiplier;
+}
+
+function getAdjustedOverDisplay(row: HeavyLegRow): string {
+  return `${getAdjustedOverTarget(row.line, row.price)} ${getDisplayMarketName(row.market_name)}`;
+}
+
 /* =========================
 COMPONENT
 ========================= */
@@ -709,7 +735,7 @@ export default function ClientHeader() {
                       opacity: 0.85,
                     }}
                   >
-                    FanDuel only • anchor = UNDER -114/-118 • strict spike filter
+                    FanDuel only • strict spike filter
                   </div>
 
                   <div
@@ -747,7 +773,7 @@ export default function ClientHeader() {
                     </select>
 
                     <span style={{ fontSize: 12, opacity: 0.75 }}>
-                      Showing {filteredRows.length} PPP picks • {filteredHeavyLegRows.length} OVER legs
+                      Showing {filteredRows.length} PPP picks • {filteredHeavyLegRows.length} graded OVER legs
                     </span>
                   </div>
 
@@ -773,6 +799,7 @@ export default function ClientHeader() {
                               {filteredRows.map((r, i) => {
                                 const key =
                                   `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                                const anchorGrade = getAnchorGrade(r.under_price);
 
                                 return (
                                   <tr
@@ -786,7 +813,15 @@ export default function ClientHeader() {
                                     <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
 
                                     <td>
-                                      {r.market_name} {r.line} (U {r.under_price})
+                                      {r.market_name} {r.line}{' '}
+                                      <span
+                                        style={{
+                                          fontWeight: 800,
+                                          color: anchorGrade.color,
+                                        }}
+                                      >
+                                        {anchorGrade.label}
+                                      </span>
                                     </td>
 
                                     <td>
@@ -839,7 +874,7 @@ export default function ClientHeader() {
                                 <th>Game</th>
                                 <th>Player</th>
                                 <th>Leg</th>
-                                <th>Odds</th>
+                                <th>Grade</th>
                                 <th>Book</th>
                               </tr>
                             </thead>
@@ -848,6 +883,7 @@ export default function ClientHeader() {
                               {filteredHeavyLegRows.map((r, i) => {
                                 const key =
                                   `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
+                                const overGrade = getOverGrade(r.price);
 
                                 return (
                                   <tr
@@ -860,11 +896,16 @@ export default function ClientHeader() {
 
                                     <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
 
-                                    <td>
-                                      {r.market_name} {r.line} (O)
-                                    </td>
+                                    <td>{getAdjustedOverDisplay(r)}</td>
 
-                                    <td>{r.price}</td>
+                                    <td
+                                      style={{
+                                        fontWeight: 800,
+                                        color: overGrade.color,
+                                      }}
+                                    >
+                                      {overGrade.label}
+                                    </td>
 
                                     <td>{r.bookmaker_title}</td>
                                   </tr>
@@ -874,7 +915,7 @@ export default function ClientHeader() {
                           </table>
                         </div>
                       ) : (
-                        <div className="pppEmptyNote">No -600 / -1200 OVER legs.</div>
+                        <div className="pppEmptyNote">No graded OVER legs.</div>
                       )}
                     </div>
                   </div>
