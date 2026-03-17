@@ -125,6 +125,8 @@ type HeavyLegRow = {
   line: number;
   bookmaker_title: string;
   price: number;
+  adjusted_target: number;
+  matched_over_price: number | null;
 };
 
 /* =========================
@@ -259,8 +261,24 @@ function getAdjustedOverTarget(line: number, price: number): number {
   return madeLine * multiplier;
 }
 
+function getAdjustedSearchLine(target: number): number {
+  return target - 0.5;
+}
+
 function getAdjustedOverDisplay(row: HeavyLegRow): string {
-  return `${getAdjustedOverTarget(row.line, row.price)} ${getDisplayMarketName(row.market_name)}`;
+  return `${row.adjusted_target} ${getDisplayMarketName(row.market_name)}`;
+}
+
+function getHeavyRowKey(row: HeavyLegRow): string {
+  return `${row.game}|${row.player}|${row.market_name}|${row.line}|${row.bookmaker_title}|${row.price}`;
+}
+
+function getPlayerLabel(player: string, opts?: { star?: boolean; bomb?: boolean }) {
+  const parts: string[] = [];
+  if (opts?.bomb) parts.push('💣');
+  if (opts?.star) parts.push('⭐');
+  parts.push(player);
+  return parts.join(' ');
 }
 
 /* =========================
@@ -370,14 +388,34 @@ export default function ClientHeader() {
 
         const heavyRows: HeavyLegRow[] = heavyLegSourceRows
           .filter((r) => r.over_price === -600 || r.over_price === -1200)
-          .map((r) => ({
-            game: r.game,
-            player: r.player,
-            market_name: r.market_name,
-            line: r.line,
-            bookmaker_title: r.bookmaker_title,
-            price: r.over_price,
-          }))
+          .map((r) => {
+            const adjustedTarget = getAdjustedOverTarget(r.line, r.over_price);
+            const adjustedSearchLine = getAdjustedSearchLine(adjustedTarget);
+
+            const matchedOverRows = heavyLegSourceRows.filter(
+              (candidate) =>
+                candidate.game === r.game &&
+                candidate.player === r.player &&
+                candidate.market_name === r.market_name &&
+                Math.abs(candidate.line - adjustedSearchLine) < 0.0001 &&
+                isFiniteNumber(candidate.over_price)
+            );
+
+            const matchedOverPrice = matchedOverRows.length
+              ? Math.max(...matchedOverRows.map((candidate) => candidate.over_price))
+              : null;
+
+            return {
+              game: r.game,
+              player: r.player,
+              market_name: r.market_name,
+              line: r.line,
+              bookmaker_title: r.bookmaker_title,
+              price: r.over_price,
+              adjusted_target: adjustedTarget,
+              matched_over_price: matchedOverPrice,
+            };
+          })
           .sort(
             (a, b) =>
               a.game.localeCompare(b.game) ||
@@ -484,6 +522,31 @@ export default function ClientHeader() {
   const starredPlayers = new Set(
     Array.from(leftPlayers).filter((player) => rightPlayers.has(player))
   );
+
+  const maxMatchedOverPrice = filteredHeavyLegRows.reduce((max, row) => {
+    if (!isFiniteNumber(row.matched_over_price)) return max;
+    return Math.max(max, row.matched_over_price);
+  }, Number.NEGATIVE_INFINITY);
+
+  const bombRowKeys = new Set(
+    filteredHeavyLegRows
+      .filter(
+        (row) =>
+          isFiniteNumber(row.matched_over_price) &&
+          row.matched_over_price === maxMatchedOverPrice
+      )
+      .map((row) => getHeavyRowKey(row))
+  );
+
+  const sortedHeavyDisplayRows = [...filteredHeavyLegRows].sort((a, b) => {
+    const aBomb = bombRowKeys.has(getHeavyRowKey(a));
+    const bBomb = bombRowKeys.has(getHeavyRowKey(b));
+
+    if (aBomb && !bBomb) return -1;
+    if (!aBomb && bBomb) return 1;
+
+    return 0;
+  });
 
   return (
     <>
@@ -773,7 +836,7 @@ export default function ClientHeader() {
                     </select>
 
                     <span style={{ fontSize: 12, opacity: 0.75 }}>
-                      Showing {filteredRows.length} PPP picks • {filteredHeavyLegRows.length} graded OVER legs
+                      Showing {filteredRows.length} PPP picks • {sortedHeavyDisplayRows.length} graded OVER legs
                     </span>
                   </div>
 
@@ -810,7 +873,7 @@ export default function ClientHeader() {
                                   >
                                     <td><GameLogos game={r.game} /></td>
 
-                                    <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+                                    <td>{getPlayerLabel(r.player, { star: starredPlayers.has(r.player) })}</td>
 
                                     <td>
                                       {r.market_name} {r.line}{' '}
@@ -866,7 +929,7 @@ export default function ClientHeader() {
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      {filteredHeavyLegRows.length > 0 ? (
+                      {sortedHeavyDisplayRows.length > 0 ? (
                         <div className="pppTableWrap">
                           <table className="table pppRightTable">
                             <thead>
@@ -880,10 +943,11 @@ export default function ClientHeader() {
                             </thead>
 
                             <tbody>
-                              {filteredHeavyLegRows.map((r, i) => {
+                              {sortedHeavyDisplayRows.map((r, i) => {
                                 const key =
                                   `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
                                 const overGrade = getOverGrade(r.price);
+                                const isBomb = bombRowKeys.has(getHeavyRowKey(r));
 
                                 return (
                                   <tr
@@ -894,7 +958,12 @@ export default function ClientHeader() {
                                   >
                                     <td><GameLogos game={r.game} /></td>
 
-                                    <td>{starredPlayers.has(r.player) ? `⭐ ${r.player}` : r.player}</td>
+                                    <td>
+                                      {getPlayerLabel(r.player, {
+                                        star: starredPlayers.has(r.player),
+                                        bomb: isBomb,
+                                      })}
+                                    </td>
 
                                     <td>{getAdjustedOverDisplay(r)}</td>
 
@@ -927,4 +996,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-}
+                }
