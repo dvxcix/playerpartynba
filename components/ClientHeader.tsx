@@ -255,6 +255,10 @@ function getDisplayMarketName(marketName: string): string {
   return marketName.replace(/^Alt\s+/i, '');
 }
 
+function isFanDuelBook(bookmakerTitle: string): boolean {
+  return bookmakerTitle.toLowerCase().includes('fanduel');
+}
+
 function getAdjustedOverTarget(line: number, price: number): number {
   const madeLine = Math.floor(line) + 1;
   const multiplier = price === -1200 ? 3 : 2;
@@ -395,9 +399,11 @@ export default function ClientHeader() {
           .map((r) => {
             const adjustedTarget = getAdjustedOverTarget(r.line, r.over_price);
             const adjustedSearchLine = getAdjustedSearchLine(adjustedTarget);
+            const sourceIsFanDuel = isFanDuelBook(r.bookmaker_title);
 
             const matchedOverRows = heavyLegSourceRows.filter(
               (candidate) =>
+                isFanDuelBook(candidate.bookmaker_title) &&
                 candidate.game === r.game &&
                 candidate.player === r.player &&
                 candidate.market_name === r.market_name &&
@@ -405,9 +411,10 @@ export default function ClientHeader() {
                 isFiniteNumber(candidate.over_price)
             );
 
-            const matchedOverPrice = matchedOverRows.length
-              ? Math.max(...matchedOverRows.map((candidate) => candidate.over_price))
-              : null;
+            const matchedOverPrice =
+              sourceIsFanDuel && matchedOverRows.length
+                ? Math.max(...matchedOverRows.map((candidate) => candidate.over_price))
+                : null;
 
             return {
               game: r.game,
@@ -1016,4 +1023,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-}
+                                  }
