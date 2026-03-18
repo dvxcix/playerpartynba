@@ -533,14 +533,17 @@ export default function ClientHeader() {
   const bestBombOdds = bombCandidates.length
     ? Math.max(...bombCandidates.map((row) => row.matched_over_price as number))
     : null;
-  const bombRowKeys = new Set(
-    bombCandidates
-      .filter((row) => row.matched_over_price === bestBombOdds)
-      .map((row) => getHeavyRowKey(row))
+  const winningBombRows = bombCandidates.filter(
+    (row) => row.matched_over_price === bestBombOdds
   );
+  const bombRowKeys = new Set(winningBombRows.map((row) => getHeavyRowKey(row)));
+  const bombPlayers = new Set(winningBombRows.map((row) => row.player));
 
   const cloverCandidates = filteredHeavyLegRows.filter(
-    (row) => row.price === -600 && isFiniteNumber(row.matched_over_price)
+    (row) =>
+      row.price === -600 &&
+      isFiniteNumber(row.matched_over_price) &&
+      !bombPlayers.has(row.player)
   );
   const bestCloverOdds = cloverCandidates.length
     ? Math.max(...cloverCandidates.map((row) => row.matched_over_price as number))
@@ -1013,4 +1016,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-                  }
+}
