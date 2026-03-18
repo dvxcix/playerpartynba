@@ -129,6 +129,8 @@ type HeavyLegRow = {
   matched_over_price: number | null;
 };
 
+type PickTypeFilter = 'ALL' | 'BOMB' | 'CLOVER' | 'STAR';
+
 /* =========================
 SPIKE ENGINE
 ========================= */
@@ -329,6 +331,8 @@ export default function ClientHeader() {
   const [heavyLegRows, setHeavyLegRows] = useState<HeavyLegRow[]>([]);
   const [loadingPPP, setLoadingPPP] = useState(false);
   const [gameFilter, setGameFilter] = useState('ALL');
+  const [pickTypeFilter, setPickTypeFilter] = useState<PickTypeFilter>('ALL');
+  const [selectedHeavyGames, setSelectedHeavyGames] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const {
@@ -366,6 +370,16 @@ export default function ClientHeader() {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const toggleHeavyGame = (game: string) => {
+    setSelectedHeavyGames((prev) =>
+      prev.includes(game) ? prev.filter((g) => g !== game) : [...prev, game]
+    );
+  };
+
+  const clearHeavyGameSelection = () => {
+    setSelectedHeavyGames([]);
   };
 
   const runManualRefresh = async () => {
@@ -545,24 +559,39 @@ export default function ClientHeader() {
       ? pppRows
       : pppRows.filter((r) => r.game === gameFilter);
 
-  const filteredHeavyLegRows =
+  const gameFilteredHeavyLegRows =
     gameFilter === 'ALL'
       ? heavyLegRows
       : heavyLegRows.filter((r) => r.game === gameFilter);
 
-  const leftPlayers = new Set(filteredRows.map((r) => r.player));
-  const rightPlayers = new Set(filteredHeavyLegRows.map((r) => r.player));
-  const starredPlayers = new Set(
-    Array.from(leftPlayers).filter((player) => rightPlayers.has(player))
+  const heavyToggleGames = Array.from(
+    new Set(gameFilteredHeavyLegRows.map((r) => r.game))
+  ).sort();
+
+  const effectiveSelectedHeavyGames = selectedHeavyGames.filter((game) =>
+    heavyToggleGames.includes(game)
+  );
+
+  const heavyRowsAfterGameToggle =
+    effectiveSelectedHeavyGames.length === 0
+      ? gameFilteredHeavyLegRows
+      : gameFilteredHeavyLegRows.filter((r) => effectiveSelectedHeavyGames.includes(r.game));
+
+  const leftPlayersBase = new Set(filteredRows.map((r) => r.player));
+  const rightPlayersBase = new Set(heavyRowsAfterGameToggle.map((r) => r.player));
+  const baseStarPlayers = new Set(
+    Array.from(leftPlayersBase).filter((player) => rightPlayersBase.has(player))
   );
 
   const heavyCandidateSorter = (a: HeavyLegRow, b: HeavyLegRow) => {
-    const oddsDiff = (b.matched_over_price ?? Number.NEGATIVE_INFINITY) - (a.matched_over_price ?? Number.NEGATIVE_INFINITY);
+    const oddsDiff =
+      (b.matched_over_price ?? Number.NEGATIVE_INFINITY) -
+      (a.matched_over_price ?? Number.NEGATIVE_INFINITY);
     if (oddsDiff !== 0) return oddsDiff;
     return compareHeavyRows(a, b);
   };
 
-  const topBombRows = [...filteredHeavyLegRows]
+  const topBombRows = [...heavyRowsAfterGameToggle]
     .filter((row) => row.price === -1200 && isFiniteNumber(row.matched_over_price))
     .sort(heavyCandidateSorter)
     .slice(0, 3);
@@ -574,7 +603,7 @@ export default function ClientHeader() {
 
   const bombPlayers = new Set(topBombRows.map((row) => row.player));
 
-  const topCloverRows = [...filteredHeavyLegRows]
+  const topCloverRows = [...heavyRowsAfterGameToggle]
     .filter(
       (row) =>
         row.price === -600 &&
@@ -589,7 +618,22 @@ export default function ClientHeader() {
     cloverRankByKey.set(getHeavyRowKey(row), (index + 1) as 1 | 2 | 3);
   });
 
-  const sortedHeavyDisplayRows = [...filteredHeavyLegRows].sort((a, b) => {
+  const heavyRowsAfterPickType = heavyRowsAfterGameToggle.filter((row) => {
+    const key = getHeavyRowKey(row);
+
+    if (pickTypeFilter === 'BOMB') return bombRankByKey.has(key);
+    if (pickTypeFilter === 'CLOVER') return cloverRankByKey.has(key);
+    if (pickTypeFilter === 'STAR') return baseStarPlayers.has(row.player);
+
+    return true;
+  });
+
+  const displayedRightPlayers = new Set(heavyRowsAfterPickType.map((r) => r.player));
+  const starredPlayers = new Set(
+    Array.from(leftPlayersBase).filter((player) => displayedRightPlayers.has(player))
+  );
+
+  const sortedHeavyDisplayRows = [...heavyRowsAfterPickType].sort((a, b) => {
     const aKey = getHeavyRowKey(a);
     const bKey = getHeavyRowKey(b);
 
@@ -899,6 +943,29 @@ export default function ClientHeader() {
                       ))}
                     </select>
 
+                    <span style={{ fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
+                      Pick Type:
+                    </span>
+
+                    <select
+                      value={pickTypeFilter}
+                      onChange={(e) => setPickTypeFilter(e.target.value as PickTypeFilter)}
+                      style={{
+                        background: '#111827',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        fontSize: 13,
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="ALL">All</option>
+                      <option value="BOMB">💣</option>
+                      <option value="CLOVER">🍀</option>
+                      <option value="STAR">⭐</option>
+                    </select>
+
                     <span style={{ fontSize: 12, opacity: 0.75 }}>
                       Showing {filteredRows.length} PPP picks • {sortedHeavyDisplayRows.length} graded OVER legs
                     </span>
@@ -993,6 +1060,74 @@ export default function ClientHeader() {
                     </div>
 
                     <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          marginBottom: 10,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            opacity: 0.9,
+                          }}
+                        >
+                          Games:
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 8,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={clearHeavyGameSelection}
+                            style={{
+                              background: effectiveSelectedHeavyGames.length === 0 ? '#1f2937' : '#111827',
+                              color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.14)',
+                              borderRadius: 8,
+                              padding: '8px 10px',
+                              fontSize: 13,
+                              cursor: 'pointer',
+                              fontWeight: effectiveSelectedHeavyGames.length === 0 ? 700 : 500,
+                            }}
+                          >
+                            ALL
+                          </button>
+
+                          {heavyToggleGames.map((game) => {
+                            const active = effectiveSelectedHeavyGames.includes(game);
+
+                            return (
+                              <button
+                                key={game}
+                                type="button"
+                                onClick={() => toggleHeavyGame(game)}
+                                style={{
+                                  background: active ? '#1f2937' : '#111827',
+                                  color: '#fff',
+                                  border: '1px solid rgba(255,255,255,0.14)',
+                                  borderRadius: 8,
+                                  padding: '8px 10px',
+                                  fontSize: 13,
+                                  cursor: 'pointer',
+                                  fontWeight: active ? 700 : 500,
+                                }}
+                              >
+                                {game}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       {sortedHeavyDisplayRows.length > 0 ? (
                         <div className="pppTableWrap">
                           <table className="table pppRightTable">
@@ -1063,4 +1198,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-                           }
+}
