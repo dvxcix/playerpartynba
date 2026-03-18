@@ -277,14 +277,44 @@ function getHeavyRowKey(row: HeavyLegRow): string {
   return `${row.game}|${row.player}|${row.market_name}|${row.line}|${row.bookmaker_title}|${row.price}`;
 }
 
+function compareHeavyRows(a: HeavyLegRow, b: HeavyLegRow): number {
+  return (
+    a.game.localeCompare(b.game) ||
+    a.player.localeCompare(b.player) ||
+    a.market_name.localeCompare(b.market_name) ||
+    a.line - b.line ||
+    a.price - b.price ||
+    a.bookmaker_title.localeCompare(b.bookmaker_title)
+  );
+}
+
+function getRankEmoji(rank?: 1 | 2 | 3): string | null {
+  if (rank === 1) return '1️⃣';
+  if (rank === 2) return '2️⃣';
+  if (rank === 3) return '3️⃣';
+  return null;
+}
+
 function getPlayerLabel(
   player: string,
-  opts?: { star?: boolean; bomb?: boolean; clover?: boolean }
+  opts?: {
+    star?: boolean;
+    bombRank?: 1 | 2 | 3;
+    cloverRank?: 1 | 2 | 3;
+  }
 ) {
   const parts: string[] = [];
-  if (opts?.bomb) parts.push('💣');
-  else if (opts?.clover) parts.push('🍀');
+
+  if (opts?.bombRank) {
+    parts.push('💣');
+    parts.push(getRankEmoji(opts.bombRank)!);
+  } else if (opts?.cloverRank) {
+    parts.push('🍀');
+    parts.push(getRankEmoji(opts.cloverRank)!);
+  }
+
   if (opts?.star) parts.push('⭐');
+
   parts.push(player);
   return parts.join(' ');
 }
@@ -427,15 +457,7 @@ export default function ClientHeader() {
               matched_over_price: matchedOverPrice,
             };
           })
-          .sort(
-            (a, b) =>
-              a.game.localeCompare(b.game) ||
-              a.player.localeCompare(b.player) ||
-              a.market_name.localeCompare(b.market_name) ||
-              a.line - b.line ||
-              a.price - b.price ||
-              a.bookmaker_title.localeCompare(b.bookmaker_title)
-          );
+          .sort(compareHeavyRows);
 
         const anchors = cleanedRows.filter((r) => {
           const anchorType = getMarketType(r.market_name);
@@ -534,42 +556,60 @@ export default function ClientHeader() {
     Array.from(leftPlayers).filter((player) => rightPlayers.has(player))
   );
 
-  const bombCandidates = filteredHeavyLegRows.filter(
-    (row) => row.price === -1200 && isFiniteNumber(row.matched_over_price)
-  );
-  const bestBombOdds = bombCandidates.length
-    ? Math.max(...bombCandidates.map((row) => row.matched_over_price as number))
-    : null;
-  const winningBombRows = bombCandidates.filter(
-    (row) => row.matched_over_price === bestBombOdds
-  );
-  const bombRowKeys = new Set(winningBombRows.map((row) => getHeavyRowKey(row)));
-  const bombPlayers = new Set(winningBombRows.map((row) => row.player));
+  const heavyCandidateSorter = (a: HeavyLegRow, b: HeavyLegRow) => {
+    const oddsDiff = (b.matched_over_price ?? Number.NEGATIVE_INFINITY) - (a.matched_over_price ?? Number.NEGATIVE_INFINITY);
+    if (oddsDiff !== 0) return oddsDiff;
+    return compareHeavyRows(a, b);
+  };
 
-  const cloverCandidates = filteredHeavyLegRows.filter(
-    (row) =>
-      row.price === -600 &&
-      isFiniteNumber(row.matched_over_price) &&
-      !bombPlayers.has(row.player)
-  );
-  const bestCloverOdds = cloverCandidates.length
-    ? Math.max(...cloverCandidates.map((row) => row.matched_over_price as number))
-    : null;
-  const cloverRowKeys = new Set(
-    cloverCandidates
-      .filter((row) => row.matched_over_price === bestCloverOdds)
-      .map((row) => getHeavyRowKey(row))
-  );
+  const topBombRows = [...filteredHeavyLegRows]
+    .filter((row) => row.price === -1200 && isFiniteNumber(row.matched_over_price))
+    .sort(heavyCandidateSorter)
+    .slice(0, 3);
+
+  const bombRankByKey = new Map<string, 1 | 2 | 3>();
+  topBombRows.forEach((row, index) => {
+    bombRankByKey.set(getHeavyRowKey(row), (index + 1) as 1 | 2 | 3);
+  });
+
+  const bombPlayers = new Set(topBombRows.map((row) => row.player));
+
+  const topCloverRows = [...filteredHeavyLegRows]
+    .filter(
+      (row) =>
+        row.price === -600 &&
+        isFiniteNumber(row.matched_over_price) &&
+        !bombPlayers.has(row.player)
+    )
+    .sort(heavyCandidateSorter)
+    .slice(0, 3);
+
+  const cloverRankByKey = new Map<string, 1 | 2 | 3>();
+  topCloverRows.forEach((row, index) => {
+    cloverRankByKey.set(getHeavyRowKey(row), (index + 1) as 1 | 2 | 3);
+  });
 
   const sortedHeavyDisplayRows = [...filteredHeavyLegRows].sort((a, b) => {
     const aKey = getHeavyRowKey(a);
     const bKey = getHeavyRowKey(b);
 
-    const aPriority = bombRowKeys.has(aKey) ? 0 : cloverRowKeys.has(aKey) ? 1 : 2;
-    const bPriority = bombRowKeys.has(bKey) ? 0 : cloverRowKeys.has(bKey) ? 1 : 2;
+    const aBombRank = bombRankByKey.get(aKey);
+    const bBombRank = bombRankByKey.get(bKey);
+    if (aBombRank || bBombRank) {
+      if (!aBombRank) return 1;
+      if (!bBombRank) return -1;
+      return aBombRank - bBombRank;
+    }
 
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    return 0;
+    const aCloverRank = cloverRankByKey.get(aKey);
+    const bCloverRank = cloverRankByKey.get(bKey);
+    if (aCloverRank || bCloverRank) {
+      if (!aCloverRank) return 1;
+      if (!bCloverRank) return -1;
+      return aCloverRank - bCloverRank;
+    }
+
+    return compareHeavyRows(a, b);
   });
 
   return (
@@ -972,8 +1012,8 @@ export default function ClientHeader() {
                                   `${r.game}|${r.player}|${r.market_name}|${r.line}|${r.bookmaker_title}`;
                                 const overGrade = getOverGrade(r.price);
                                 const heavyKey = getHeavyRowKey(r);
-                                const isBomb = bombRowKeys.has(heavyKey);
-                                const isClover = cloverRowKeys.has(heavyKey);
+                                const bombRank = bombRankByKey.get(heavyKey);
+                                const cloverRank = cloverRankByKey.get(heavyKey);
 
                                 return (
                                   <tr
@@ -987,8 +1027,8 @@ export default function ClientHeader() {
                                     <td>
                                       {getPlayerLabel(r.player, {
                                         star: starredPlayers.has(r.player),
-                                        bomb: isBomb,
-                                        clover: isClover,
+                                        bombRank,
+                                        cloverRank,
                                       })}
                                     </td>
 
@@ -1023,4 +1063,4 @@ export default function ClientHeader() {
       )}
     </>
   );
-                                  }
+                           }
